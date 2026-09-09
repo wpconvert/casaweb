@@ -1,0 +1,793 @@
+```html
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RemotePhone</title>
+
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: Arial, Helvetica, sans-serif;
+        }
+
+        body {
+            background: #0b0f14;
+            color: #fff;
+            min-height: 100vh;
+        }
+
+        button,
+        a {
+            font: inherit;
+        }
+
+        /* Sidebar */
+
+        .sidebar {
+            position: fixed;
+            inset: 0 auto 0 0;
+            width: 230px;
+            padding: 24px 16px;
+            background: #11161d;
+            border-right: 1px solid #202833;
+        }
+
+        .logo {
+            padding-left: 10px;
+            margin-bottom: 35px;
+            font-size: 21px;
+            font-weight: 700;
+        }
+
+        .logo span {
+            color: #4ade80;
+        }
+
+        .menu-title {
+            margin: 0 10px 10px;
+            color: #697586;
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .menu {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            list-style: none;
+        }
+
+        .menu a {
+            display: block;
+            padding: 12px 13px;
+            border-radius: 8px;
+            color: #9aa5b1;
+            text-decoration: none;
+            font-size: 14px;
+            transition: 0.2s;
+        }
+
+        .menu a:hover,
+        .menu a.active {
+            background: #1c252f;
+            color: #fff;
+        }
+
+        .logout {
+            position: absolute;
+            right: 16px;
+            bottom: 20px;
+            left: 16px;
+        }
+
+        .logout button {
+            width: 100%;
+            padding: 11px 13px;
+            border: 1px solid #2a343f;
+            border-radius: 8px;
+            background: transparent;
+            color: #9aa5b1;
+            cursor: pointer;
+            text-align: left;
+            transition: 0.2s;
+        }
+
+        .logout button:hover {
+            background: #1b1515;
+            border-color: #493030;
+            color: #f87171;
+        }
+
+        /* Main */
+
+        .main {
+            margin-left: 230px;
+            padding: 28px;
+        }
+
+        .topbar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 30px;
+        }
+
+        .page-title h1 {
+            margin-bottom: 6px;
+            font-size: 25px;
+        }
+
+        .page-title p {
+            color: #7d8997;
+            font-size: 13px;
+        }
+
+        .user {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            color: #aeb7c2;
+            font-size: 13px;
+        }
+
+        .avatar {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            background: #26313d;
+        }
+
+        /* Stats */
+
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 15px;
+            margin-bottom: 30px;
+        }
+
+        .stat-card {
+            padding: 18px;
+            border: 1px solid #202833;
+            border-radius: 10px;
+            background: #11161d;
+        }
+
+        .stat-label {
+            margin-bottom: 10px;
+            color: #7d8997;
+            font-size: 12px;
+        }
+
+        .stat-number {
+            font-size: 24px;
+            font-weight: 700;
+        }
+
+        /* Section */
+
+        .section-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 15px;
+        }
+
+        .section-header h2 {
+            font-size: 16px;
+        }
+
+        .section-header span {
+            color: #687483;
+            font-size: 12px;
+        }
+
+        /* Computers */
+
+        .computer-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 15px;
+        }
+
+        .computer-card {
+            padding: 20px;
+            border: 1px solid #202833;
+            border-radius: 10px;
+            background: #11161d;
+            transition: 0.2s;
+        }
+
+        .computer-card:hover {
+            border-color: #394552;
+            transform: translateY(-2px);
+        }
+
+        .computer-top {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 18px;
+        }
+
+        .computer-icon,
+        .device-icon {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 42px;
+            height: 42px;
+            border-radius: 9px;
+            background: #1b232c;
+            font-size: 20px;
+        }
+
+        .status {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 10px;
+        }
+
+        .status.online {
+            color: #4ade80;
+        }
+
+        .status.offline {
+            color: #f87171;
+        }
+
+        .status-dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+        }
+
+        .online .status-dot {
+            background: #4ade80;
+        }
+
+        .offline .status-dot {
+            background: #f87171;
+        }
+
+        .computer-name,
+        .device-name {
+            margin-bottom: 6px;
+            font-size: 15px;
+            font-weight: 700;
+        }
+
+        .computer-id,
+        .device-model {
+            margin-bottom: 18px;
+            color: #657181;
+            font-size: 10px;
+        }
+
+        .computer-info {
+            display: flex;
+            justify-content: space-between;
+            padding-bottom: 15px;
+            border-bottom: 1px solid #202833;
+            color: #7d8997;
+            font-size: 11px;
+        }
+
+        .open-button {
+            width: 100%;
+            margin-top: 15px;
+            padding: 10px;
+            border: 1px solid #29343f;
+            border-radius: 7px;
+            background: #171e26;
+            color: #d8dee5;
+            cursor: pointer;
+            transition: 0.2s;
+        }
+
+        .open-button:hover {
+            background: #202a35;
+            color: #fff;
+        }
+
+        /* Devices */
+
+        .device-page,
+        .viewer-page {
+            display: none;
+        }
+
+        .back-button {
+            margin-bottom: 20px;
+            border: 0;
+            background: transparent;
+            color: #7d8997;
+            cursor: pointer;
+            font-size: 12px;
+        }
+
+        .back-button:hover {
+            color: #fff;
+        }
+
+        .device-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 15px;
+        }
+
+        .device-card {
+            padding: 20px;
+            border: 1px solid #202833;
+            border-radius: 10px;
+            background: #11161d;
+            cursor: pointer;
+            transition: 0.2s;
+        }
+
+        .device-card:hover {
+            border-color: #394552;
+            transform: translateY(-2px);
+        }
+
+        .device-icon {
+            margin-bottom: 15px;
+        }
+
+        /* Viewer */
+
+        .viewer {
+            min-height: 650px;
+            padding: 18px;
+            border: 1px solid #202833;
+            border-radius: 10px;
+            background: #11161d;
+        }
+
+        .viewer-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 18px;
+        }
+
+        .viewer-name {
+            font-size: 15px;
+            font-weight: 700;
+        }
+
+        .viewer-status {
+            margin-top: 5px;
+            color: #4ade80;
+            font-size: 10px;
+        }
+
+        .screen-area {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 500px;
+            border: 1px solid #1d252e;
+            border-radius: 8px;
+            background: #050709;
+        }
+
+        .phone-screen {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 250px;
+            height: 450px;
+            border: 4px solid #303943;
+            border-radius: 18px;
+            background: linear-gradient(145deg, #202b35, #10151b);
+            color: #657181;
+            font-size: 12px;
+            text-align: center;
+        }
+
+        .controls {
+            display: flex;
+            justify-content: center;
+            gap: 10px;
+            margin-top: 15px;
+        }
+
+        .control-button {
+            width: 42px;
+            height: 36px;
+            border: 1px solid #2a343f;
+            border-radius: 7px;
+            background: #151c24;
+            color: #d5dbe1;
+            cursor: pointer;
+        }
+
+        .control-button:hover {
+            background: #202a35;
+        }
+
+        /* Responsive */
+
+        @media (max-width: 1000px) {
+            .computer-grid,
+            .device-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+        }
+
+        @media (max-width: 700px) {
+            .sidebar {
+                width: 70px;
+            }
+
+            .logo {
+                font-size: 0;
+            }
+
+            .logo span {
+                font-size: 20px;
+            }
+
+            .menu a {
+                font-size: 0;
+                text-align: center;
+            }
+
+            .logout button {
+                font-size: 0;
+                text-align: center;
+            }
+
+            .main {
+                margin-left: 70px;
+            }
+
+            .stats,
+            .computer-grid,
+            .device-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+    <aside class="sidebar">
+        <div class="logo">
+            Remote<span>Phone</span>
+        </div>
+
+        <div class="menu-title">Menu</div>
+
+        <ul class="menu">
+            <li>
+                <a href="#" class="active">Dashboard</a>
+            </li>
+            <li>
+                <a href="#">Computers</a>
+            </li>
+            <li>
+                <a href="#">Devices</a>
+            </li>
+            <li>
+                <a href="#">Files</a>
+            </li>
+            <li>
+                <a href="#">Settings</a>
+            </li>
+        </ul>
+
+        <div class="logout">
+            <button onclick="logout()">
+                ↪ Logout
+            </button>
+        </div>
+    </aside>
+
+
+    <main class="main">
+
+        <header class="topbar">
+            <div class="page-title">
+                <h1 id="pageTitle">My Computers</h1>
+                <p id="pageDescription">
+                    Manage computers and connected Android devices.
+                </p>
+            </div>
+
+            <div class="user">
+                Admin
+                <div class="avatar">A</div>
+            </div>
+        </header>
+
+
+        <!-- Dashboard -->
+
+        <section id="dashboardPage">
+
+            <div class="stats">
+                <div class="stat-card">
+                    <div class="stat-label">Computers</div>
+                    <div class="stat-number">6</div>
+                </div>
+
+                <div class="stat-card">
+                    <div class="stat-label">Online Computers</div>
+                    <div class="stat-number">5</div>
+                </div>
+
+                <div class="stat-card">
+                    <div class="stat-label">Connected Phones</div>
+                    <div class="stat-number">18</div>
+                </div>
+            </div>
+
+            <div class="section-header">
+                <h2>My Computers</h2>
+                <span>6 computers</span>
+            </div>
+
+            <div class="computer-grid" id="computerGrid"></div>
+
+        </section>
+
+
+        <!-- Devices -->
+
+        <section id="devicePage" class="device-page">
+
+            <button class="back-button" onclick="showComputers()">
+                ← Back to Computers
+            </button>
+
+            <div class="section-header">
+                <h2 id="computerName">Laptop 01</h2>
+                <span id="computerId">HOST-001</span>
+            </div>
+
+            <div class="device-grid" id="deviceGrid"></div>
+
+        </section>
+
+
+        <!-- Viewer -->
+
+        <section id="viewerPage" class="viewer-page">
+
+            <button class="back-button" onclick="showDevices()">
+                ← Back to Devices
+            </button>
+
+            <div class="viewer">
+
+                <div class="viewer-header">
+                    <div>
+                        <div class="viewer-name" id="viewerName">
+                            Android 01
+                        </div>
+
+                        <div class="viewer-status">
+                            ● Connected
+                        </div>
+                    </div>
+                </div>
+
+                <div class="screen-area">
+                    <div class="phone-screen">
+                        Waiting for<br>
+                        device stream...
+                    </div>
+                </div>
+
+                <div class="controls">
+                    <button class="control-button">◀</button>
+                    <button class="control-button">●</button>
+                    <button class="control-button">▣</button>
+                    <button class="control-button">📷</button>
+                    <button class="control-button">⛶</button>
+                </div>
+
+            </div>
+
+        </section>
+
+    </main>
+
+
+    <script>
+        const computers = [
+            {
+                name: "Laptop 01",
+                id: "HOST-001",
+                online: true
+            },
+            {
+                name: "Laptop 02",
+                id: "HOST-002",
+                online: true
+            },
+            {
+                name: "Laptop 03",
+                id: "HOST-003",
+                online: true
+            },
+            {
+                name: "Laptop 04",
+                id: "HOST-004",
+                online: true
+            },
+            {
+                name: "Laptop 05",
+                id: "HOST-005",
+                online: false
+            },
+            {
+                name: "Laptop 06",
+                id: "HOST-006",
+                online: true
+            }
+        ];
+
+        const devices = [
+            {
+                name: "Android 01",
+                model: "Android Device"
+            },
+            {
+                name: "Android 02",
+                model: "Android Device"
+            },
+            {
+                name: "Android 03",
+                model: "Android Device"
+            }
+        ];
+
+        let selectedComputer = null;
+
+
+        function renderComputers() {
+            const grid = document.getElementById("computerGrid");
+
+            grid.innerHTML = computers.map(computer => `
+                <div class="computer-card">
+
+                    <div class="computer-top">
+                        <div class="computer-icon">💻</div>
+
+                        <div class="status ${computer.online ? "online" : "offline"}">
+                            <div class="status-dot"></div>
+                            ${computer.online ? "Online" : "Offline"}
+                        </div>
+                    </div>
+
+                    <div class="computer-name">
+                        ${computer.name}
+                    </div>
+
+                    <div class="computer-id">
+                        ${computer.id}
+                    </div>
+
+                    <div class="computer-info">
+                        <span>Devices</span>
+                        <span>3 Phones</span>
+                    </div>
+
+                    <button
+                        class="open-button"
+                        onclick="openComputer('${computer.name}', '${computer.id}')">
+                        Open Computer
+                    </button>
+
+                </div>
+            `).join("");
+        }
+
+
+        function renderDevices() {
+            const grid = document.getElementById("deviceGrid");
+
+            grid.innerHTML = devices.map(device => `
+                <div
+                    class="device-card"
+                    onclick="openViewer('${device.name}')">
+
+                    <div class="device-icon">📱</div>
+
+                    <div class="device-name">
+                        ${device.name}
+                    </div>
+
+                    <div class="device-model">
+                        ${device.model}
+                    </div>
+
+                    <div class="status online">
+                        <div class="status-dot"></div>
+                        Online
+                    </div>
+
+                </div>
+            `).join("");
+        }
+
+
+        function openComputer(name, id) {
+            selectedComputer = { name, id };
+
+            document.getElementById("dashboardPage").style.display = "none";
+            document.getElementById("devicePage").style.display = "block";
+            document.getElementById("viewerPage").style.display = "none";
+
+            document.getElementById("computerName").textContent = name;
+            document.getElementById("computerId").textContent = id;
+
+            document.getElementById("pageTitle").textContent = name;
+            document.getElementById("pageDescription").textContent =
+                "Select an Android device connected to this computer.";
+        }
+
+
+        function showComputers() {
+            document.getElementById("dashboardPage").style.display = "block";
+            document.getElementById("devicePage").style.display = "none";
+            document.getElementById("viewerPage").style.display = "none";
+
+            document.getElementById("pageTitle").textContent = "My Computers";
+            document.getElementById("pageDescription").textContent =
+                "Manage computers and connected Android devices.";
+        }
+
+
+        function openViewer(deviceName) {
+            document.getElementById("dashboardPage").style.display = "none";
+            document.getElementById("devicePage").style.display = "none";
+            document.getElementById("viewerPage").style.display = "block";
+
+            document.getElementById("viewerName").textContent =
+                `${selectedComputer.name} / ${deviceName}`;
+
+            document.getElementById("pageTitle").textContent = deviceName;
+            document.getElementById("pageDescription").textContent =
+                `${selectedComputer.name} • ${selectedComputer.id}`;
+        }
+
+
+        function showDevices() {
+            document.getElementById("dashboardPage").style.display = "none";
+            document.getElementById("devicePage").style.display = "block";
+            document.getElementById("viewerPage").style.display = "none";
+
+            document.getElementById("pageTitle").textContent =
+                selectedComputer.name;
+
+            document.getElementById("pageDescription").textContent =
+                "Select an Android device connected to this computer.";
+        }
+
+
+        function logout() {
+            alert("Logout akan dihubungkan ke sistem authentication nanti.");
+        }
+
+
+        renderComputers();
+        renderDevices();
+    </script>
+
+</body>
+</html>
+```
