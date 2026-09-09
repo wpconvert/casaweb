@@ -503,6 +503,7 @@
                 <p id="pageDescription">
                     Manage computers and connected Android devices.
                 </p>
+                <p style="margin-top:6px;color:#4ade80;font-size:11px;">TEST • Server 172.16.10.37:8765</p>
             </div>
 
             <div class="user">
@@ -606,63 +607,81 @@
 
 
     <script>
-        const computers = [
-            {
-                name: "Laptop 01",
-                id: "HOST-001",
-                online: true
-            },
-            {
-                name: "Laptop 02",
-                id: "HOST-002",
-                online: true
-            },
-            {
-                name: "Laptop 03",
-                id: "HOST-003",
-                online: true
-            },
-            {
-                name: "Laptop 04",
-                id: "HOST-004",
-                online: true
-            },
-            {
-                name: "Laptop 05",
-                id: "HOST-005",
-                online: false
-            },
-            {
-                name: "Laptop 06",
-                id: "HOST-006",
-                online: true
-            }
-        ];
+        /*
+         * RemotePhone TEST
+         * Laptop 1 server: 172.16.10.37:8765
+         *
+         * This test page keeps the existing dashboard design but gets
+         * computers/devices dynamically from the RemotePhone WebSocket server.
+         */
 
-        const devices = [
-            {
-                name: "Android 01",
-                model: "Android Device"
-            },
-            {
-                name: "Android 02",
-                model: "Android Device"
-            },
-            {
-                name: "Android 03",
-                model: "Android Device"
-            }
-        ];
+        const SERVER_URL = "ws://172.16.10.37:8765";
 
+        let socket = null;
+        let hosts = {};
         let selectedComputer = null;
+        let selectedDevice = null;
 
+        const dashboardPage = document.getElementById("dashboardPage");
+        const devicePage = document.getElementById("devicePage");
+        const viewerPage = document.getElementById("viewerPage");
+
+        function escapeHtml(value) {
+            return String(value ?? "")
+                .replace(/&/g, "&amp;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;")
+                .replace(/"/g, "&quot;")
+                .replace(/'/g, "&#039;");
+        }
+
+        function getHostList() {
+            return Object.entries(hosts).map(([id, host]) => ({
+                id,
+                name: host?.name || id,
+                online: host?.online !== false,
+                devices: Array.isArray(host?.devices) ? host.devices : []
+            }));
+        }
+
+        function renderStats() {
+            const list = getHostList();
+            const online = list.filter(host => host.online).length;
+            const phoneCount = list.reduce((total, host) => {
+                return total + host.devices.length;
+            }, 0);
+
+            const statNumbers = document.querySelectorAll(".stat-number");
+
+            if (statNumbers[0]) statNumbers[0].textContent = list.length;
+            if (statNumbers[1]) statNumbers[1].textContent = online;
+            if (statNumbers[2]) statNumbers[2].textContent = phoneCount;
+
+            const countLabel = document.querySelector(".section-header span");
+            if (countLabel) {
+                countLabel.textContent = `${list.length} computer${list.length === 1 ? "" : "s"}`;
+            }
+        }
 
         function renderComputers() {
             const grid = document.getElementById("computerGrid");
+            const list = getHostList();
 
-            grid.innerHTML = computers.map(computer => `
+            if (list.length === 0) {
+                grid.innerHTML = `
+                    <div class="computer-card">
+                        <div class="computer-name">No computers connected</div>
+                        <div class="computer-id">
+                            Waiting for RemotePhone Agent...
+                        </div>
+                    </div>
+                `;
+                renderStats();
+                return;
+            }
+
+            grid.innerHTML = list.map(computer => `
                 <div class="computer-card">
-
                     <div class="computer-top">
                         <div class="computer-icon">💻</div>
 
@@ -673,88 +692,130 @@
                     </div>
 
                     <div class="computer-name">
-                        ${computer.name}
+                        ${escapeHtml(computer.name)}
                     </div>
 
                     <div class="computer-id">
-                        ${computer.id}
+                        ${escapeHtml(computer.id)}
                     </div>
 
                     <div class="computer-info">
                         <span>Devices</span>
-                        <span>3 Phones</span>
+                        <span>${computer.devices.length} Phone${computer.devices.length === 1 ? "" : "s"}</span>
                     </div>
 
                     <button
                         class="open-button"
-                        onclick="openComputer('${computer.name}', '${computer.id}')">
+                        onclick="openComputer('${escapeHtml(computer.name)}', '${escapeHtml(computer.id)}')">
                         Open Computer
                     </button>
-
                 </div>
             `).join("");
-        }
 
+            renderStats();
+        }
 
         function renderDevices() {
             const grid = document.getElementById("deviceGrid");
 
-            grid.innerHTML = devices.map(device => `
-                <div
-                    class="device-card"
-                    onclick="openViewer('${device.name}')">
+            if (!selectedComputer) {
+                grid.innerHTML = "";
+                return;
+            }
 
-                    <div class="device-icon">📱</div>
+            const devices = selectedComputer.devices || [];
 
-                    <div class="device-name">
-                        ${device.name}
+            if (devices.length === 0) {
+                grid.innerHTML = `
+                    <div class="device-card">
+                        <div class="device-name">No Android devices detected</div>
+                        <div class="device-model">
+                            Waiting for ADB device update...
+                        </div>
                     </div>
+                `;
+                return;
+            }
 
-                    <div class="device-model">
-                        ${device.model}
+            grid.innerHTML = devices.map((device, index) => {
+                const name =
+                    device.name ||
+                    device.model ||
+                    `Android ${String(index + 1).padStart(2, "0")}`;
+
+                const model = device.model || "Android Device";
+                const serial = device.serial || device.id || "";
+
+                return `
+                    <div
+                        class="device-card"
+                        onclick="openViewer('${escapeHtml(name)}', '${escapeHtml(serial)}')">
+
+                        <div class="device-icon">📱</div>
+
+                        <div class="device-name">
+                            ${escapeHtml(name)}
+                        </div>
+
+                        <div class="device-model">
+                            ${escapeHtml(model)}
+                        </div>
+
+                        <div class="status online">
+                            <div class="status-dot"></div>
+                            Online
+                        </div>
                     </div>
-
-                    <div class="status online">
-                        <div class="status-dot"></div>
-                        Online
-                    </div>
-
-                </div>
-            `).join("");
+                `;
+            }).join("");
         }
-
 
         function openComputer(name, id) {
-            selectedComputer = { name, id };
+            const host = hosts[id];
 
-            document.getElementById("dashboardPage").style.display = "none";
-            document.getElementById("devicePage").style.display = "block";
-            document.getElementById("viewerPage").style.display = "none";
+            selectedComputer = {
+                id,
+                name: host?.name || name,
+                online: host?.online !== false,
+                devices: Array.isArray(host?.devices) ? host.devices : []
+            };
 
-            document.getElementById("computerName").textContent = name;
-            document.getElementById("computerId").textContent = id;
+            dashboardPage.style.display = "none";
+            devicePage.style.display = "block";
+            viewerPage.style.display = "none";
 
-            document.getElementById("pageTitle").textContent = name;
+            document.getElementById("computerName").textContent = selectedComputer.name;
+            document.getElementById("computerId").textContent = selectedComputer.id;
+
+            document.getElementById("pageTitle").textContent = selectedComputer.name;
             document.getElementById("pageDescription").textContent =
                 "Select an Android device connected to this computer.";
+
+            renderDevices();
         }
 
-
         function showComputers() {
-            document.getElementById("dashboardPage").style.display = "block";
-            document.getElementById("devicePage").style.display = "none";
-            document.getElementById("viewerPage").style.display = "none";
+            selectedComputer = null;
+            selectedDevice = null;
+
+            dashboardPage.style.display = "block";
+            devicePage.style.display = "none";
+            viewerPage.style.display = "none";
 
             document.getElementById("pageTitle").textContent = "My Computers";
             document.getElementById("pageDescription").textContent =
                 "Manage computers and connected Android devices.";
         }
 
+        function openViewer(deviceName, serial) {
+            selectedDevice = {
+                name: deviceName,
+                serial: serial || ""
+            };
 
-        function openViewer(deviceName) {
-            document.getElementById("dashboardPage").style.display = "none";
-            document.getElementById("devicePage").style.display = "none";
-            document.getElementById("viewerPage").style.display = "block";
+            dashboardPage.style.display = "none";
+            devicePage.style.display = "none";
+            viewerPage.style.display = "block";
 
             document.getElementById("viewerName").textContent =
                 `${selectedComputer.name} / ${deviceName}`;
@@ -762,29 +823,79 @@
             document.getElementById("pageTitle").textContent = deviceName;
             document.getElementById("pageDescription").textContent =
                 `${selectedComputer.name} • ${selectedComputer.id}`;
+
+            /*
+             * Live screen is intentionally still a placeholder here.
+             * The next stage will add the actual Android screen stream.
+             */
         }
 
-
         function showDevices() {
-            document.getElementById("dashboardPage").style.display = "none";
-            document.getElementById("devicePage").style.display = "block";
-            document.getElementById("viewerPage").style.display = "none";
+            dashboardPage.style.display = "none";
+            devicePage.style.display = "block";
+            viewerPage.style.display = "none";
 
             document.getElementById("pageTitle").textContent =
-                selectedComputer.name;
+                selectedComputer ? selectedComputer.name : "Devices";
 
             document.getElementById("pageDescription").textContent =
                 "Select an Android device connected to this computer.";
-        }
 
+            renderDevices();
+        }
 
         function logout() {
             alert("Logout akan dihubungkan ke sistem authentication nanti.");
         }
 
+        function connectToServer() {
+            if (socket && (
+                socket.readyState === WebSocket.OPEN ||
+                socket.readyState === WebSocket.CONNECTING
+            )) {
+                return;
+            }
+
+            console.log("Connecting to RemotePhone server:", SERVER_URL);
+
+            socket = new WebSocket(SERVER_URL);
+
+            socket.addEventListener("open", () => {
+                console.log("RemotePhone server connected.");
+
+                socket.send(JSON.stringify({
+                    type: "register",
+                    role: "browser"
+                }));
+            });
+
+            socket.addEventListener("message", event => {
+                try {
+                    const data = JSON.parse(event.data);
+
+                    if (data.type === "devices") {
+                        hosts = data.hosts || {};
+                        renderComputers();
+                    }
+                } catch (error) {
+                    console.error("Invalid server message:", error);
+                }
+            });
+
+            socket.addEventListener("error", error => {
+                console.error("RemotePhone WebSocket error:", error);
+            });
+
+            socket.addEventListener("close", () => {
+                console.log("RemotePhone server disconnected.");
+
+                // Try again after a short delay.
+                setTimeout(connectToServer, 3000);
+            });
+        }
 
         renderComputers();
-        renderDevices();
+        connectToServer();
     </script>
 
 </body>
