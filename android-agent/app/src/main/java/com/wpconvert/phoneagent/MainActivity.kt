@@ -3,20 +3,47 @@ package com.wpconvert.phoneagent
 import android.app.Activity
 import android.content.Intent
 import android.media.projection.MediaProjectionManager
+import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
+import android.view.Gravity
 import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.TextView
 
 class MainActivity : Activity() {
     private lateinit var status: TextView
+    private lateinit var captureButton: Button
+
     private val captureRequestCode = 1001
+    private val handler = Handler(Looper.getMainLooper())
+    private val prefs by lazy { getSharedPreferences(ScreenCaptureService.PREFS_NAME, MODE_PRIVATE) }
+
+    private val statusPoll = object : Runnable {
+        override fun run() {
+            val active = prefs.getBoolean(ScreenCaptureService.KEY_ACTIVE, false)
+            val width = prefs.getInt(ScreenCaptureService.KEY_WIDTH, 0)
+            val height = prefs.getInt(ScreenCaptureService.KEY_HEIGHT, 0)
+
+            if (active) {
+                status.text = "Status: Screen capture aktif\n${width} × ${height}"
+                captureButton.text = "Hentikan screen capture"
+            } else {
+                status.text = "Status: Menunggu izin screen capture"
+                captureButton.text = "Izinkan akses layar"
+            }
+
+            handler.postDelayed(this, 1000)
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
+            gravity = Gravity.TOP
             setPadding(32, 48, 32, 32)
         }
 
@@ -31,15 +58,26 @@ class MainActivity : Activity() {
             setPadding(0, 32, 0, 32)
         }
 
-        val button = Button(this).apply {
+        captureButton = Button(this).apply {
             text = "Izinkan akses layar"
-            setOnClickListener { requestScreenCapturePermission() }
+            setOnClickListener {
+                if (prefs.getBoolean(ScreenCaptureService.KEY_ACTIVE, false)) {
+                    val stopIntent = Intent(this@MainActivity, ScreenCaptureService::class.java).apply {
+                        action = ScreenCaptureService.ACTION_STOP
+                    }
+                    startService(stopIntent)
+                } else {
+                    requestScreenCapturePermission()
+                }
+            }
         }
 
         root.addView(title)
         root.addView(status)
-        root.addView(button)
+        root.addView(captureButton)
         setContentView(root)
+
+        handler.post(statusPoll)
     }
 
     private fun requestScreenCapturePermission() {
@@ -47,15 +85,33 @@ class MainActivity : Activity() {
         startActivityForResult(manager.createScreenCaptureIntent(), captureRequestCode)
     }
 
-    @Deprecated("Deprecated in Android API, kept for simple prototype flow")
+    @Deprecated("Deprecated in Android API, kept for compatibility with the prototype flow")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
         if (requestCode != captureRequestCode) return
 
-        status.text = if (resultCode == RESULT_OK && data != null) {
-            "Status: Izin screen capture diberikan"
-        } else {
-            "Status: Izin screen capture ditolak"
+        if (resultCode != RESULT_OK || data == null) {
+            status.text = "Status: Izin screen capture ditolak"
+            return
         }
+
+        val serviceIntent = Intent(this, ScreenCaptureService::class.java).apply {
+            action = ScreenCaptureService.ACTION_START
+            putExtra(ScreenCaptureService.EXTRA_RESULT_CODE, resultCode)
+            putExtra(ScreenCaptureService.EXTRA_RESULT_DATA, data)
+        }
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            startForegroundService(serviceIntent)
+        } else {
+            startService(serviceIntent)
+        }
+
+        status.text = "Status: Memulai screen capture..."
+    }
+
+    override fun onDestroy() {
+        handler.removeCallbacks(statusPoll)
+        super.onDestroy()
     }
 }

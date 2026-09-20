@@ -19,5 +19,10 @@
             </intent-filter>
         </activity>
 
+        <service
+            android:name=".ScreenCaptureService"
+            android:exported="false"
+            android:foregroundServiceType="mediaProjection" />
+
     </application>
 </manifest>
