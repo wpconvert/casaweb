@@ -25,7 +25,7 @@ class WebSocketClientManager(
 
 
         // GANTI DENGAN IP PC SERVER
-        val serverUrl = "ws://192.168.1.10:8765"
+        val serverUrl = "ws://192.168.105.250:8765"
 
 
         socket = object : WebSocketClient(
