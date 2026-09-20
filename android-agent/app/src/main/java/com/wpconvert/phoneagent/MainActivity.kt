@@ -8,6 +8,7 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.view.Gravity
+import android.view.WindowManager
 import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.TextView
@@ -18,7 +19,9 @@ class MainActivity : Activity() {
 
     private val captureRequestCode = 1001
     private val handler = Handler(Looper.getMainLooper())
-    private val prefs by lazy { getSharedPreferences(ScreenCaptureService.PREFS_NAME, MODE_PRIVATE) }
+    private val prefs by lazy {
+        getSharedPreferences(ScreenCaptureService.PREFS_NAME, MODE_PRIVATE)
+    }
 
     private val statusPoll = object : Runnable {
         override fun run() {
@@ -41,6 +44,10 @@ class MainActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
+        // Untuk tahap pengujian:
+        // menjaga layar tetap menyala selama MainActivity terbuka.
+        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.TOP
@@ -60,11 +67,14 @@ class MainActivity : Activity() {
 
         captureButton = Button(this).apply {
             text = "Izinkan akses layar"
+
             setOnClickListener {
                 if (prefs.getBoolean(ScreenCaptureService.KEY_ACTIVE, false)) {
-                    val stopIntent = Intent(this@MainActivity, ScreenCaptureService::class.java).apply {
-                        action = ScreenCaptureService.ACTION_STOP
-                    }
+                    val stopIntent =
+                        Intent(this@MainActivity, ScreenCaptureService::class.java).apply {
+                            action = ScreenCaptureService.ACTION_STOP
+                        }
+
                     startService(stopIntent)
                 } else {
                     requestScreenCapturePermission()
@@ -75,6 +85,7 @@ class MainActivity : Activity() {
         root.addView(title)
         root.addView(status)
         root.addView(captureButton)
+
         setContentView(root)
 
         handler.post(statusPoll)
@@ -82,12 +93,20 @@ class MainActivity : Activity() {
 
     private fun requestScreenCapturePermission() {
         val manager = getSystemService(MediaProjectionManager::class.java)
-        startActivityForResult(manager.createScreenCaptureIntent(), captureRequestCode)
+        startActivityForResult(
+            manager.createScreenCaptureIntent(),
+            captureRequestCode
+        )
     }
 
     @Deprecated("Deprecated in Android API, kept for compatibility with the prototype flow")
-    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+    override fun onActivityResult(
+        requestCode: Int,
+        resultCode: Int,
+        data: Intent?
+    ) {
         super.onActivityResult(requestCode, resultCode, data)
+
         if (requestCode != captureRequestCode) return
 
         if (resultCode != RESULT_OK || data == null) {
@@ -95,11 +114,12 @@ class MainActivity : Activity() {
             return
         }
 
-        val serviceIntent = Intent(this, ScreenCaptureService::class.java).apply {
-            action = ScreenCaptureService.ACTION_START
-            putExtra(ScreenCaptureService.EXTRA_RESULT_CODE, resultCode)
-            putExtra(ScreenCaptureService.EXTRA_RESULT_DATA, data)
-        }
+        val serviceIntent =
+            Intent(this, ScreenCaptureService::class.java).apply {
+                action = ScreenCaptureService.ACTION_START
+                putExtra(ScreenCaptureService.EXTRA_RESULT_CODE, resultCode)
+                putExtra(ScreenCaptureService.EXTRA_RESULT_DATA, data)
+            }
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             startForegroundService(serviceIntent)
