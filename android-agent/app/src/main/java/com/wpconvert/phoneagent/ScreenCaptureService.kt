@@ -20,13 +20,17 @@ import android.os.IBinder
 import android.os.Looper
 import android.os.PowerManager
 
+
 class ScreenCaptureService : Service() {
+
 
     private var mediaProjection: MediaProjection? = null
     private var virtualDisplay: VirtualDisplay? = null
     private var imageReader: ImageReader? = null
 
+
     private var wakeLock: PowerManager.WakeLock? = null
+
 
     private val serviceHandler =
         Handler(Looper.getMainLooper())
@@ -38,6 +42,7 @@ class ScreenCaptureService : Service() {
             MODE_PRIVATE
         )
     }
+
 
 
 
@@ -53,11 +58,13 @@ class ScreenCaptureService : Service() {
                     )
                     .apply()
 
+
                 cleanupCapture()
 
                 stopSelf()
             }
         }
+
 
 
 
@@ -68,6 +75,7 @@ class ScreenCaptureService : Service() {
 
         createNotificationChannel()
     }
+
 
 
 
@@ -95,6 +103,7 @@ class ScreenCaptureService : Service() {
 
                 cleanupCapture()
 
+
                 stopForegroundCompat()
 
                 stopSelf()
@@ -110,6 +119,7 @@ class ScreenCaptureService : Service() {
 
 
                 startForegroundWithNotification()
+
 
 
                 val resultCode =
@@ -138,6 +148,7 @@ class ScreenCaptureService : Service() {
 
 
 
+
                 if(
                     resultCode != android.app.Activity.RESULT_OK ||
                     data == null
@@ -150,15 +161,49 @@ class ScreenCaptureService : Service() {
 
 
 
+
                 startCapture(
                     resultCode,
                     data
                 )
             }
+
         }
 
 
         return START_STICKY
+    }
+
+
+
+
+
+    private fun startForegroundWithNotification() {
+
+
+        val notification =
+            buildNotification()
+
+
+
+        if(Build.VERSION.SDK_INT >= 29){
+
+
+            startForeground(
+                NOTIFICATION_ID,
+                notification,
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION
+            )
+
+
+        } else {
+
+
+            startForeground(
+                NOTIFICATION_ID,
+                notification
+            )
+        }
     }
         private fun startCapture(
         resultCode: Int,
@@ -166,7 +211,7 @@ class ScreenCaptureService : Service() {
     ) {
 
 
-        if(mediaProjection != null)
+        if (mediaProjection != null)
             return
 
 
@@ -190,13 +235,6 @@ class ScreenCaptureService : Service() {
             ?: run {
 
                 releaseWakeLock()
-
-                prefs.edit()
-                    .putBoolean(
-                        KEY_ACTIVE,
-                        false
-                    )
-                    .apply()
 
                 stopSelf()
 
@@ -233,6 +271,7 @@ class ScreenCaptureService : Service() {
 
 
 
+
         imageReader =
             ImageReader.newInstance(
                 width,
@@ -243,17 +282,19 @@ class ScreenCaptureService : Service() {
 
 
 
+
         imageReader?.setOnImageAvailableListener(
             { reader ->
 
 
                 val image =
                     reader.acquireLatestImage()
-                        ?: return@setOnImageAvailableListener
+                    ?: return@setOnImageAvailableListener
 
 
 
                 try {
+
 
                     prefs.edit()
                         .putBoolean(
@@ -275,15 +316,18 @@ class ScreenCaptureService : Service() {
                         .apply()
 
 
+
                 } finally {
 
                     image.close()
                 }
 
 
+
             },
             serviceHandler
         )
+
 
 
 
@@ -302,6 +346,7 @@ class ScreenCaptureService : Service() {
 
 
 
+
         prefs.edit()
             .putBoolean(
                 KEY_ACTIVE,
@@ -316,7 +361,9 @@ class ScreenCaptureService : Service() {
                 height
             )
             .apply()
+
     }
+
 
 
 
@@ -325,8 +372,9 @@ class ScreenCaptureService : Service() {
     private fun acquireScreenWakeLock() {
 
 
-        if(wakeLock?.isHeld == true)
+        if (wakeLock?.isHeld == true)
             return
+
 
 
 
@@ -334,6 +382,8 @@ class ScreenCaptureService : Service() {
             getSystemService(
                 Context.POWER_SERVICE
             ) as PowerManager
+
+
 
 
 
@@ -350,7 +400,9 @@ class ScreenCaptureService : Service() {
 
 
         wakeLock?.acquire()
+
     }
+
 
 
 
@@ -365,9 +417,11 @@ class ScreenCaptureService : Service() {
         )
 
 
+
         imageReader?.close()
 
         imageReader = null
+
 
 
 
@@ -377,14 +431,17 @@ class ScreenCaptureService : Service() {
 
 
 
+
         mediaProjection?.unregisterCallback(
             projectionCallback
         )
 
 
+
         mediaProjection?.stop()
 
         mediaProjection = null
+
 
 
 
@@ -395,22 +452,27 @@ class ScreenCaptureService : Service() {
 
 
 
+
     private fun releaseWakeLock() {
 
 
         try {
 
+
             wakeLock?.let {
 
-                if(it.isHeld){
+
+                if (it.isHeld) {
 
                     it.release()
                 }
             }
 
-        } catch (_: Exception){
+
+        } catch (_: Exception) {
 
         }
+
 
 
         wakeLock = null
@@ -420,10 +482,13 @@ class ScreenCaptureService : Service() {
 
 
 
-    private fun createNotificationChannel(){
 
-        if(Build.VERSION.SDK_INT < 26)
+    private fun createNotificationChannel() {
+
+
+        if (Build.VERSION.SDK_INT < 26)
             return
+
 
 
 
@@ -452,6 +517,7 @@ class ScreenCaptureService : Service() {
 
 
 
+
     private fun buildNotification(): Notification {
 
 
@@ -465,10 +531,11 @@ class ScreenCaptureService : Service() {
 
         val flags =
             PendingIntent.FLAG_UPDATE_CURRENT or
-                    if(Build.VERSION.SDK_INT >= 23)
+                    if (Build.VERSION.SDK_INT >= 23)
                         PendingIntent.FLAG_IMMUTABLE
                     else
                         0
+
 
 
 
@@ -482,8 +549,9 @@ class ScreenCaptureService : Service() {
 
 
 
+
         val builder =
-            if(Build.VERSION.SDK_INT >= 26)
+            if (Build.VERSION.SDK_INT >= 26)
 
                 Notification.Builder(
                     this,
@@ -493,6 +561,8 @@ class ScreenCaptureService : Service() {
             else
 
                 Notification.Builder(this)
+
+
 
 
 
@@ -511,24 +581,32 @@ class ScreenCaptureService : Service() {
                 pendingIntent
             )
             .build()
+
     }
 
 
 
 
 
-    private fun stopForegroundCompat(){
 
-        if(Build.VERSION.SDK_INT >= 24){
+
+    private fun stopForegroundCompat() {
+
+
+        if (Build.VERSION.SDK_INT >= 24) {
+
 
             stopForeground(
                 STOP_FOREGROUND_REMOVE
             )
 
-        }else{
+
+        } else {
+
 
             @Suppress("DEPRECATION")
             stopForeground(true)
+
         }
     }
 
@@ -536,9 +614,13 @@ class ScreenCaptureService : Service() {
 
 
 
-    override fun onDestroy(){
+
+    override fun onDestroy() {
+
 
         cleanupCapture()
+
+
 
         prefs.edit()
             .putBoolean(
@@ -548,8 +630,10 @@ class ScreenCaptureService : Service() {
             .apply()
 
 
+
         super.onDestroy()
     }
+
 
 
 
@@ -562,6 +646,7 @@ class ScreenCaptureService : Service() {
 
 
 
+
     companion object {
 
 
@@ -569,20 +654,25 @@ class ScreenCaptureService : Service() {
             "web_phone_agent"
 
 
+
         const val KEY_ACTIVE =
             "screen_capture_active"
+
 
 
         const val KEY_WIDTH =
             "screen_capture_width"
 
 
+
         const val KEY_HEIGHT =
             "screen_capture_height"
 
 
+
         const val KEY_LAST_FRAME_AT =
             "screen_capture_last_frame_at"
+
 
 
 
@@ -596,6 +686,7 @@ class ScreenCaptureService : Service() {
 
 
 
+
         const val EXTRA_RESULT_CODE =
             "result_code"
 
@@ -606,8 +697,10 @@ class ScreenCaptureService : Service() {
 
 
 
+
         private const val CHANNEL_ID =
             "web_phone_agent_capture"
+
 
 
 
