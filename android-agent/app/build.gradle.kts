@@ -17,8 +17,11 @@ android {
     buildTypes {
         release {
             isMinifyEnabled = false
+
             proguardFiles(
-                getDefaultProguardFile("proguard-android-optimize.txt"),
+                getDefaultProguardFile(
+                    "proguard-android-optimize.txt"
+                ),
                 "proguard-rules.pro"
             )
         }
@@ -30,7 +33,15 @@ android {
     }
 }
 
+
 dependencies {
+
     implementation("org.jetbrains.kotlin:kotlin-stdlib:2.2.10")
+
+    // WebRTC yang sudah ada
     implementation("io.github.webrtc-sdk:android:150.7871.01")
+
+    // WebSocket untuk koneksi APK ke server.py
+    implementation("org.java-websocket:Java-WebSocket:1.5.6")
+
 }
