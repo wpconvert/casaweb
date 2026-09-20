@@ -21,6 +21,9 @@ class MainActivity : Activity() {
     private lateinit var captureButton: Button
     private lateinit var brightnessButton: Button
 
+    // WebSocket
+    private lateinit var webSocket: WebSocketClientManager
+
     private val captureRequestCode = 1001
 
     private val handler = Handler(Looper.getMainLooper())
@@ -79,10 +82,18 @@ class MainActivity : Activity() {
     }
 
 
-
     override fun onCreate(savedInstanceState: Bundle?) {
 
         super.onCreate(savedInstanceState)
+
+        // =========================
+        // WEBSOCKET SERVER
+        // =========================
+
+        webSocket =
+            WebSocketClientManager(this)
+
+        webSocket.connect()
 
 
         window.addFlags(
@@ -107,7 +118,6 @@ class MainActivity : Activity() {
         }
 
 
-
         val title =
             TextView(this).apply {
 
@@ -117,7 +127,6 @@ class MainActivity : Activity() {
                 textSize =
                     24f
             }
-
 
 
         status =
@@ -138,13 +147,11 @@ class MainActivity : Activity() {
             }
 
 
-
         brightnessButton =
             Button(this).apply {
 
                 text =
                     "Izinkan kontrol brightness"
-
 
                 setOnClickListener {
 
@@ -154,13 +161,11 @@ class MainActivity : Activity() {
             }
 
 
-
         captureButton =
             Button(this).apply {
 
                 text =
                     "Izinkan akses layar"
-
 
                 setOnClickListener {
 
@@ -170,7 +175,6 @@ class MainActivity : Activity() {
                             false
                         )
                     ) {
-
 
                         val stopIntent =
                             Intent(
@@ -185,7 +189,6 @@ class MainActivity : Activity() {
 
                         startService(stopIntent)
 
-
                     } else {
 
                         requestScreenCapturePermission()
@@ -194,7 +197,6 @@ class MainActivity : Activity() {
 
                 }
             }
-
 
 
         root.addView(title)
@@ -206,14 +208,11 @@ class MainActivity : Activity() {
         root.addView(captureButton)
 
 
-
         setContentView(root)
 
 
         handler.post(statusPoll)
     }
-
-
 
 
     private fun openWriteSettingsPermission() {
@@ -237,9 +236,6 @@ class MainActivity : Activity() {
     }
 
 
-
-
-
     private fun requestScreenCapturePermission() {
 
         val manager =
@@ -253,9 +249,6 @@ class MainActivity : Activity() {
             captureRequestCode
         )
     }
-
-
-
 
 
     @Deprecated(
@@ -279,7 +272,6 @@ class MainActivity : Activity() {
         ) return
 
 
-
         if (
             resultCode != RESULT_OK ||
             data == null
@@ -290,7 +282,6 @@ class MainActivity : Activity() {
 
             return
         }
-
 
 
         val serviceIntent =
@@ -316,7 +307,6 @@ class MainActivity : Activity() {
             }
 
 
-
         if (
             Build.VERSION.SDK_INT >=
             Build.VERSION_CODES.O
@@ -336,14 +326,14 @@ class MainActivity : Activity() {
     }
 
 
-
-
-
     override fun onDestroy() {
 
         handler.removeCallbacks(
             statusPoll
         )
+
+        // Tutup koneksi WebSocket
+        webSocket.disconnect()
 
         super.onDestroy()
     }
