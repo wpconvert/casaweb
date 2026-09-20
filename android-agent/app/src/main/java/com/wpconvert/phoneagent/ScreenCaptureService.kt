@@ -28,30 +28,48 @@ class ScreenCaptureService : Service() {
 
     private var wakeLock: PowerManager.WakeLock? = null
 
-    private val serviceHandler = Handler(Looper.getMainLooper())
+    private val serviceHandler =
+        Handler(Looper.getMainLooper())
+
 
     private val prefs by lazy {
-        getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+        getSharedPreferences(
+            PREFS_NAME,
+            MODE_PRIVATE
+        )
     }
 
 
-    private val projectionCallback = object : MediaProjection.Callback() {
 
-        override fun onStop() {
-            prefs.edit()
-                .putBoolean(KEY_ACTIVE, false)
-                .apply()
+    private val projectionCallback =
+        object : MediaProjection.Callback() {
 
-            cleanupCapture()
-            stopSelf()
+            override fun onStop() {
+
+                prefs.edit()
+                    .putBoolean(
+                        KEY_ACTIVE,
+                        false
+                    )
+                    .apply()
+
+                cleanupCapture()
+
+                stopSelf()
+            }
         }
-    }
+
+
 
 
     override fun onCreate() {
+
         super.onCreate()
+
         createNotificationChannel()
     }
+
+
 
 
     override fun onStartCommand(
@@ -61,26 +79,35 @@ class ScreenCaptureService : Service() {
     ): Int {
 
 
-        when (intent?.action) {
+        when(intent?.action) {
 
 
             ACTION_STOP -> {
 
+
                 prefs.edit()
-                    .putBoolean(KEY_ACTIVE, false)
+                    .putBoolean(
+                        KEY_ACTIVE,
+                        false
+                    )
                     .apply()
+
 
                 cleanupCapture()
 
                 stopForegroundCompat()
+
                 stopSelf()
+
 
                 return START_NOT_STICKY
             }
 
 
 
+
             ACTION_START -> {
+
 
                 startForegroundWithNotification()
 
@@ -92,8 +119,9 @@ class ScreenCaptureService : Service() {
                     )
 
 
+
                 val data =
-                    if (Build.VERSION.SDK_INT >= 33) {
+                    if(Build.VERSION.SDK_INT >= 33){
 
                         intent.getParcelableExtra(
                             EXTRA_RESULT_DATA,
@@ -110,20 +138,16 @@ class ScreenCaptureService : Service() {
 
 
 
-                if (
+                if(
                     resultCode != android.app.Activity.RESULT_OK ||
                     data == null
-                ) {
+                ){
 
-                    prefs.edit()
-                        .putBoolean(KEY_ACTIVE, false)
-                        .apply()
-
-                    stopForegroundCompat()
                     stopSelf()
 
                     return START_NOT_STICKY
                 }
+
 
 
                 startCapture(
@@ -134,67 +158,20 @@ class ScreenCaptureService : Service() {
         }
 
 
-        return START_NOT_STICKY
+        return START_STICKY
     }
-
-
-
-    private fun startForegroundWithNotification() {
-
-        val notification = buildNotification()
-
-
-        if (Build.VERSION.SDK_INT >= 29) {
-
-            startForeground(
-                NOTIFICATION_ID,
-                notification,
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION
-            )
-
-        } else {
-
-            startForeground(
-                NOTIFICATION_ID,
-                notification
-            )
-        }
-    }
-
-
-
-
-
-    private fun startCapture(
+        private fun startCapture(
         resultCode: Int,
         data: Intent
     ) {
 
 
-        if (mediaProjection != null)
+        if(mediaProjection != null)
             return
 
 
 
-        // ==========================
-        // PARTIAL WAKE LOCK
-        // menjaga CPU tetap aktif
-        // ==========================
-
-        val powerManager =
-            getSystemService(
-                Context.POWER_SERVICE
-            ) as PowerManager
-
-
-        wakeLock =
-            powerManager.newWakeLock(
-                PowerManager.PARTIAL_WAKE_LOCK,
-                "WebPhoneAgent::CaptureWakeLock"
-            )
-
-
-        wakeLock?.acquire()
+        acquireScreenWakeLock()
 
 
 
@@ -204,6 +181,7 @@ class ScreenCaptureService : Service() {
             )
 
 
+
         val projection =
             manager.getMediaProjection(
                 resultCode,
@@ -211,11 +189,14 @@ class ScreenCaptureService : Service() {
             )
             ?: run {
 
-                prefs.edit()
-                    .putBoolean(KEY_ACTIVE, false)
-                    .apply()
-
                 releaseWakeLock()
+
+                prefs.edit()
+                    .putBoolean(
+                        KEY_ACTIVE,
+                        false
+                    )
+                    .apply()
 
                 stopSelf()
 
@@ -225,6 +206,7 @@ class ScreenCaptureService : Service() {
 
 
         mediaProjection = projection
+
 
 
         projection.registerCallback(
@@ -267,7 +249,8 @@ class ScreenCaptureService : Service() {
 
                 val image =
                     reader.acquireLatestImage()
-                    ?: return@setOnImageAvailableListener
+                        ?: return@setOnImageAvailableListener
+
 
 
                 try {
@@ -339,6 +322,40 @@ class ScreenCaptureService : Service() {
 
 
 
+    private fun acquireScreenWakeLock() {
+
+
+        if(wakeLock?.isHeld == true)
+            return
+
+
+
+        val powerManager =
+            getSystemService(
+                Context.POWER_SERVICE
+            ) as PowerManager
+
+
+
+        wakeLock =
+            powerManager.newWakeLock(
+                PowerManager.SCREEN_DIM_WAKE_LOCK,
+                "WebPhoneAgent::ScreenDimWakeLock"
+            )
+
+
+
+        wakeLock?.setReferenceCounted(false)
+
+
+
+        wakeLock?.acquire()
+    }
+
+
+
+
+
     private fun cleanupCapture() {
 
 
@@ -349,11 +366,13 @@ class ScreenCaptureService : Service() {
 
 
         imageReader?.close()
+
         imageReader = null
 
 
 
         virtualDisplay?.release()
+
         virtualDisplay = null
 
 
@@ -364,6 +383,7 @@ class ScreenCaptureService : Service() {
 
 
         mediaProjection?.stop()
+
         mediaProjection = null
 
 
@@ -377,12 +397,21 @@ class ScreenCaptureService : Service() {
 
     private fun releaseWakeLock() {
 
-        wakeLock?.let {
 
-            if (it.isHeld) {
-                it.release()
+        try {
+
+            wakeLock?.let {
+
+                if(it.isHeld){
+
+                    it.release()
+                }
             }
+
+        } catch (_: Exception){
+
         }
+
 
         wakeLock = null
     }
@@ -391,10 +420,9 @@ class ScreenCaptureService : Service() {
 
 
 
+    private fun createNotificationChannel(){
 
-    private fun createNotificationChannel() {
-
-        if (Build.VERSION.SDK_INT < 26)
+        if(Build.VERSION.SDK_INT < 26)
             return
 
 
@@ -405,12 +433,14 @@ class ScreenCaptureService : Service() {
             )
 
 
+
         val channel =
             NotificationChannel(
                 CHANNEL_ID,
                 "Web Phone Agent",
                 NotificationManager.IMPORTANCE_LOW
             )
+
 
 
         manager.createNotificationChannel(
@@ -432,11 +462,13 @@ class ScreenCaptureService : Service() {
             )
 
 
+
         val flags =
             PendingIntent.FLAG_UPDATE_CURRENT or
-                    if (Build.VERSION.SDK_INT >= 23)
+                    if(Build.VERSION.SDK_INT >= 23)
                         PendingIntent.FLAG_IMMUTABLE
-                    else 0
+                    else
+                        0
 
 
 
@@ -451,12 +483,15 @@ class ScreenCaptureService : Service() {
 
 
         val builder =
-            if (Build.VERSION.SDK_INT >= 26)
+            if(Build.VERSION.SDK_INT >= 26)
+
                 Notification.Builder(
                     this,
                     CHANNEL_ID
                 )
+
             else
+
                 Notification.Builder(this)
 
 
@@ -482,16 +517,15 @@ class ScreenCaptureService : Service() {
 
 
 
+    private fun stopForegroundCompat(){
 
-    private fun stopForegroundCompat() {
-
-        if (Build.VERSION.SDK_INT >= 24) {
+        if(Build.VERSION.SDK_INT >= 24){
 
             stopForeground(
                 STOP_FOREGROUND_REMOVE
             )
 
-        } else {
+        }else{
 
             @Suppress("DEPRECATION")
             stopForeground(true)
@@ -502,8 +536,7 @@ class ScreenCaptureService : Service() {
 
 
 
-
-    override fun onDestroy() {
+    override fun onDestroy(){
 
         cleanupCapture()
 
@@ -520,6 +553,7 @@ class ScreenCaptureService : Service() {
 
 
 
+
     override fun onBind(
         intent: Intent?
     ): IBinder? = null
@@ -529,6 +563,7 @@ class ScreenCaptureService : Service() {
 
 
     companion object {
+
 
         const val PREFS_NAME =
             "web_phone_agent"
@@ -555,6 +590,7 @@ class ScreenCaptureService : Service() {
             "com.wpconvert.phoneagent.START_CAPTURE"
 
 
+
         const val ACTION_STOP =
             "com.wpconvert.phoneagent.STOP_CAPTURE"
 
@@ -564,6 +600,7 @@ class ScreenCaptureService : Service() {
             "result_code"
 
 
+
         const val EXTRA_RESULT_DATA =
             "result_data"
 
@@ -571,6 +608,7 @@ class ScreenCaptureService : Service() {
 
         private const val CHANNEL_ID =
             "web_phone_agent_capture"
+
 
 
         private const val NOTIFICATION_ID =
