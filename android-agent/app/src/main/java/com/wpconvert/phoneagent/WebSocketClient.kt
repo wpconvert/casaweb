@@ -7,6 +7,7 @@ import org.java_websocket.client.WebSocketClient
 import org.java_websocket.handshake.ServerHandshake
 import org.json.JSONObject
 import java.net.URI
+import kotlin.concurrent.thread
 
 
 class WebSocketClientManager(
@@ -18,7 +19,12 @@ class WebSocketClientManager(
 
     fun connect() {
 
-        // GANTI IP INI DENGAN IP PC YANG MENJALANKAN server.py
+        if (socket?.isOpen == true) {
+            return
+        }
+
+
+        // GANTI DENGAN IP PC SERVER
         val serverUrl = "ws://192.168.1.10:8765"
 
 
@@ -61,19 +67,22 @@ class WebSocketClientManager(
                 )
 
 
+                println(
+                    "WebSocket connected"
+                )
+
             }
+
 
 
             override fun onMessage(message: String?) {
 
-                // nanti untuk menerima perintah dari server
-                // contoh:
-                // klik layar
-                // setting
-                // screenshot
-
+                println(
+                    "Server: $message"
+                )
 
             }
+
 
 
             override fun onClose(
@@ -82,7 +91,12 @@ class WebSocketClientManager(
                 remote: Boolean
             ) {
 
+                println(
+                    "WebSocket closed: $reason"
+                )
+
             }
+
 
 
             override fun onError(ex: Exception?) {
@@ -94,7 +108,20 @@ class WebSocketClientManager(
         }
 
 
-        socket?.connect()
+
+        thread {
+
+            try {
+
+                socket?.connect()
+
+            } catch (e: Exception) {
+
+                e.printStackTrace()
+
+            }
+
+        }
 
     }
 
