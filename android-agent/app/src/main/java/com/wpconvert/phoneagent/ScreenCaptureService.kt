@@ -65,7 +65,7 @@ class ScreenCaptureService : Service() {
                     intent.getParcelableExtra(EXTRA_RESULT_DATA)
                 }
 
-                if (resultCode != RESULT_OK || data == null) {
+                if (resultCode != android.app.Activity.RESULT_OK || data == null) {
                     prefs.edit().putBoolean(KEY_ACTIVE, false).apply()
                     stopForegroundCompat()
                     stopSelf()
