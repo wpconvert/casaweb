@@ -13,6 +13,7 @@ import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
 import android.os.PowerManager
+import android.provider.Settings
 import android.util.Log
 
 class ScreenCaptureService : Service() {
@@ -150,8 +151,6 @@ class ScreenCaptureService : Service() {
                 )
 
                 /*
-                 * PENTING:
-                 *
                  * Foreground service harus aktif
                  * SEBELUM RealtimeManager menjalankan
                  * ScreenCapturerAndroid.
@@ -202,7 +201,6 @@ class ScreenCaptureService : Service() {
                         .apply()
 
                     stopForegroundCompat()
-
                     stopSelf()
 
                     return START_NOT_STICKY
@@ -347,20 +345,6 @@ class ScreenCaptureService : Service() {
             // START WEBRTC CAPTURE
             // =========================
 
-            /*
-             * PENTING:
-             *
-             * Kita TIDAK memanggil
-             * MediaProjectionManager.getMediaProjection()
-             * di service ini.
-             *
-             * RealtimeManager akan membuat
-             * ScreenCapturerAndroid.
-             *
-             * Pada saat ini foreground service
-             * MEDIA_PROJECTION sudah aktif.
-             */
-
             Log.d(
                 TAG,
                 "Memulai WebRTC screen capture"
@@ -383,30 +367,12 @@ class ScreenCaptureService : Service() {
             manager.createPeerConnection()
 
             // =========================
-            // STATUS
+            // CHECK CAPTURE
             // =========================
 
             if (
-                manager.isCapturing()
+                !manager.isCapturing()
             ) {
-
-                prefs.edit()
-                    .putBoolean(
-                        KEY_ACTIVE,
-                        true
-                    )
-                    .putLong(
-                        KEY_LAST_FRAME_AT,
-                        System.currentTimeMillis()
-                    )
-                    .apply()
-
-                Log.d(
-                    TAG,
-                    "WebRTC screen capture AKTIF"
-                )
-
-            } else {
 
                 Log.e(
                     TAG,
@@ -421,11 +387,39 @@ class ScreenCaptureService : Service() {
                     .apply()
 
                 cleanupCapture()
-
                 stopForegroundCompat()
-
                 stopSelf()
+
+                return
             }
+
+            // =========================
+            // SCREEN CAPTURE AKTIF
+            // =========================
+
+            prefs.edit()
+                .putBoolean(
+                    KEY_ACTIVE,
+                    true
+                )
+                .putLong(
+                    KEY_LAST_FRAME_AT,
+                    System.currentTimeMillis()
+                )
+                .apply()
+
+            Log.d(
+                TAG,
+                "WebRTC screen capture AKTIF"
+            )
+
+            // =========================
+            // CLOUDFLARE PUBLISH
+            // =========================
+
+            startCloudflarePublishing(
+                manager
+            )
 
         } catch (e: SecurityException) {
 
@@ -443,9 +437,7 @@ class ScreenCaptureService : Service() {
                 .apply()
 
             cleanupCapture()
-
             stopForegroundCompat()
-
             stopSelf()
 
         } catch (e: Exception) {
@@ -464,10 +456,137 @@ class ScreenCaptureService : Service() {
                 .apply()
 
             cleanupCapture()
-
             stopForegroundCompat()
-
             stopSelf()
+        }
+    }
+
+    // =========================
+    // CLOUDFLARE PUBLISH FLOW
+    // =========================
+
+    private fun startCloudflarePublishing(
+        manager: RealtimeManager
+    ) {
+
+        // =========================
+        // DEVICE ID
+        // =========================
+
+        val deviceId =
+            Settings.Secure.getString(
+                contentResolver,
+                Settings.Secure.ANDROID_ID
+            )
+
+        if (
+            deviceId.isNullOrBlank()
+        ) {
+
+            Log.e(
+                TAG,
+                "ANDROID_ID tidak tersedia"
+            )
+
+            return
+        }
+
+        Log.d(
+            TAG,
+            "Device ID: $deviceId"
+        )
+
+        // =========================
+        // CREATE SESSION
+        // =========================
+
+        Log.d(
+            TAG,
+            "Membuat Cloudflare session"
+        )
+
+        manager.createCloudflareSession {
+                success,
+                sessionId,
+                error ->
+
+            if (
+                !success ||
+                sessionId.isNullOrBlank()
+            ) {
+
+                Log.e(
+                    TAG,
+                    "Gagal membuat Cloudflare session: $error"
+                )
+
+                return@createCloudflareSession
+            }
+
+            Log.d(
+                TAG,
+                "Cloudflare session berhasil: $sessionId"
+            )
+
+            // =========================
+            // PUBLISH SCREEN
+            // =========================
+
+            Log.d(
+                TAG,
+                "Mengirim screen ke Cloudflare"
+            )
+
+            manager.publishToCloudflare(
+                sessionId,
+                deviceId
+            ) {
+                publishSuccess,
+                answer,
+                publishError ->
+
+                if (
+                    publishSuccess
+                ) {
+
+                    Log.d(
+                        TAG,
+                        "================================="
+                    )
+
+                    Log.d(
+                        TAG,
+                        "SCREEN BERHASIL DIPUBLISH"
+                    )
+
+                    Log.d(
+                        TAG,
+                        "Device ID: $deviceId"
+                    )
+
+                    Log.d(
+                        TAG,
+                        "Session ID: $sessionId"
+                    )
+
+                    Log.d(
+                        TAG,
+                        "Cloudflare answer berhasil"
+                    )
+
+                    Log.d(
+                        TAG,
+                        "================================="
+                    )
+
+                } else {
+
+                    Log.e(
+                        TAG,
+                        "Publish Cloudflare gagal: $publishError"
+                    )
+                }
+            }
         }
     }
 
@@ -548,6 +667,7 @@ class ScreenCaptureService : Service() {
         if (
             wakeLock?.isHeld == true
         ) {
+
             return
         }
 
@@ -615,6 +735,7 @@ class ScreenCaptureService : Service() {
         if (
             Build.VERSION.SDK_INT < 26
         ) {
+
             return
         }
 
@@ -655,8 +776,11 @@ class ScreenCaptureService : Service() {
                 if (
                     Build.VERSION.SDK_INT >= 23
                 ) {
+
                     PendingIntent.FLAG_IMMUTABLE
+
                 } else {
+
                     0
                 }
 
