@@ -6,11 +6,8 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
-import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
-import android.media.projection.MediaProjection
-import android.media.projection.MediaProjectionManager
 import android.os.Build
 import android.os.Handler
 import android.os.IBinder
@@ -67,25 +64,18 @@ class ScreenCaptureService : Service() {
         Handler(Looper.getMainLooper())
 
     // =========================
-    // REALTIME / WEBRTC
+    // WEBRTC
     // =========================
 
-    private var realtimeManager: RealtimeManager? =
-        null
-
-    // =========================
-    // MEDIA PROJECTION
-    // =========================
-
-    private var mediaProjection: MediaProjection? =
-        null
+    private var realtimeManager:
+        RealtimeManager? = null
 
     // =========================
     // WAKE LOCK
     // =========================
 
-    private var wakeLock: PowerManager.WakeLock? =
-        null
+    private var wakeLock:
+        PowerManager.WakeLock? = null
 
     // =========================
     // PREFS
@@ -98,43 +88,6 @@ class ScreenCaptureService : Service() {
             MODE_PRIVATE
         )
     }
-
-    // =========================
-    // MEDIA PROJECTION CALLBACK
-    // =========================
-
-    private val projectionCallback =
-        object : MediaProjection.Callback() {
-
-            override fun onStop() {
-
-                Log.d(
-                    TAG,
-                    "MediaProjection dihentikan Android"
-                )
-
-                prefs.edit()
-                    .putBoolean(
-                        KEY_ACTIVE,
-                        false
-                    )
-                    .apply()
-
-                realtimeManager?.stopScreenCapture()
-
-                realtimeManager?.dispose()
-
-                realtimeManager = null
-
-                mediaProjection = null
-
-                releaseWakeLock()
-
-                stopForegroundCompat()
-
-                stopSelf()
-            }
-        }
 
     // =========================
     // SERVICE CREATE
@@ -200,7 +153,8 @@ class ScreenCaptureService : Service() {
                  * PENTING:
                  *
                  * Foreground service harus aktif
-                 * SEBELUM MediaProjection digunakan.
+                 * SEBELUM RealtimeManager menjalankan
+                 * ScreenCapturerAndroid.
                  */
 
                 startForegroundWithNotification()
@@ -327,7 +281,7 @@ class ScreenCaptureService : Service() {
         try {
 
             // =========================
-            // SCREEN STATUS
+            // DISPLAY INFO
             // =========================
 
             val metrics =
@@ -356,54 +310,10 @@ class ScreenCaptureService : Service() {
                 .apply()
 
             // =========================
-            // WAKE LOCK
+            // CPU WAKE LOCK
             // =========================
 
             acquireScreenWakeLock()
-
-            // =========================
-            // MEDIA PROJECTION
-            // =========================
-
-            val projectionManager =
-                getSystemService(
-                    MediaProjectionManager::class.java
-                )
-
-            val projection =
-                projectionManager.getMediaProjection(
-                    resultCode,
-                    data
-                )
-
-            if (projection == null) {
-
-                Log.e(
-                    TAG,
-                    "MediaProjection = null"
-                )
-
-                releaseWakeLock()
-
-                stopForegroundCompat()
-
-                stopSelf()
-
-                return
-            }
-
-            mediaProjection =
-                projection
-
-            projection.registerCallback(
-                projectionCallback,
-                serviceHandler
-            )
-
-            Log.d(
-                TAG,
-                "MediaProjection berhasil dibuat"
-            )
 
             // =========================
             // REALTIME MANAGER
@@ -422,6 +332,10 @@ class ScreenCaptureService : Service() {
             realtimeManager =
                 manager
 
+            // =========================
+            // INITIALIZE WEBRTC
+            // =========================
+
             Log.d(
                 TAG,
                 "Inisialisasi WebRTC"
@@ -430,8 +344,22 @@ class ScreenCaptureService : Service() {
             manager.initialize()
 
             // =========================
-            // WEBRTC SCREEN CAPTURE
+            // START WEBRTC CAPTURE
             // =========================
+
+            /*
+             * PENTING:
+             *
+             * Kita TIDAK memanggil
+             * MediaProjectionManager.getMediaProjection()
+             * di service ini.
+             *
+             * RealtimeManager akan membuat
+             * ScreenCapturerAndroid.
+             *
+             * Pada saat ini foreground service
+             * MEDIA_PROJECTION sudah aktif.
+             */
 
             Log.d(
                 TAG,
@@ -491,13 +419,19 @@ class ScreenCaptureService : Service() {
                         false
                     )
                     .apply()
+
+                cleanupCapture()
+
+                stopForegroundCompat()
+
+                stopSelf()
             }
 
         } catch (e: SecurityException) {
 
             Log.e(
                 TAG,
-                "SecurityException saat MediaProjection",
+                "SecurityException saat memulai WebRTC capture",
                 e
             )
 
@@ -602,25 +536,6 @@ class ScreenCaptureService : Service() {
         realtimeManager =
             null
 
-        try {
-
-            mediaProjection?.unregisterCallback(
-                projectionCallback
-            )
-
-        } catch (_: Exception) {
-        }
-
-        try {
-
-            mediaProjection?.stop()
-
-        } catch (_: Exception) {
-        }
-
-        mediaProjection =
-            null
-
         releaseWakeLock()
     }
 
@@ -640,15 +555,8 @@ class ScreenCaptureService : Service() {
 
             val powerManager =
                 getSystemService(
-                    Context.POWER_SERVICE
-                ) as PowerManager
-
-            /*
-             * Ini hanya menjaga proses CPU tetap aktif.
-             *
-             * Kita tidak mengandalkan WakeLock
-             * untuk mencegah lock screen.
-             */
+                    PowerManager::class.java
+                )
 
             wakeLock =
                 powerManager.newWakeLock(
@@ -843,12 +751,13 @@ class ScreenCaptureService : Service() {
     }
 
     // =========================
-    // NOT BOUND SERVICE
+    // NOT BOUND
     // =========================
 
     override fun onBind(
         intent: Intent?
     ): IBinder? {
+
         return null
     }
 }
