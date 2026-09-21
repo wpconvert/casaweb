@@ -23,41 +23,81 @@ class RealtimeManager(
 ) {
 
     companion object {
-        private const val TAG = "RealtimeManager"
+
+        private const val TAG =
+            "RealtimeManager"
 
         private const val WORKER_URL =
             "https://web-phone-oneforall.danip4848.workers.dev"
     }
 
-    private var peerConnectionFactory: PeerConnectionFactory? = null
-    private var peerConnection: PeerConnection? = null
+    // =========================
+    // WEBRTC
+    // =========================
 
-    private var videoSource: VideoSource? = null
-    private var videoTrack: VideoTrack? = null
+    private var peerConnectionFactory:
+        PeerConnectionFactory? = null
 
-    private var surfaceTextureHelper: SurfaceTextureHelper? = null
-    private var screenCapturer: ScreenCapturerAndroid? = null
+    private var peerConnection:
+        PeerConnection? = null
 
-    private var initialized = false
-    private var capturing = false
+    private var videoSource:
+        VideoSource? = null
 
-    private var currentSessionId: String? = null
+    private var videoTrack:
+        VideoTrack? = null
+
+    private var surfaceTextureHelper:
+        SurfaceTextureHelper? = null
+
+    private var screenCapturer:
+        ScreenCapturerAndroid? = null
+
+    // =========================
+    // STATE
+    // =========================
+
+    private var initialized =
+        false
+
+    private var capturing =
+        false
+
+    private var currentSessionId:
+        String? = null
+
+    // =========================
+    // INITIALIZE WEBRTC
+    // =========================
 
     fun initialize() {
 
         if (initialized) {
-            Log.d(TAG, "WebRTC sudah diinisialisasi")
+
+            Log.d(
+                TAG,
+                "WebRTC sudah diinisialisasi"
+            )
+
             return
         }
 
-        Log.d(TAG, "Memulai inisialisasi WebRTC")
+        Log.d(
+            TAG,
+            "Memulai inisialisasi WebRTC"
+        )
 
         try {
 
             PeerConnectionFactory.initialize(
-                PeerConnectionFactory.InitializationOptions
-                    .builder(context)
-                    .setEnableInternalTracer(false)
+                PeerConnectionFactory
+                    .InitializationOptions
+                    .builder(
+                        context.applicationContext
+                    )
+                    .setEnableInternalTracer(
+                        false
+                    )
                     .createInitializationOptions()
             )
 
@@ -77,7 +117,8 @@ class RealtimeManager(
                 )
 
             peerConnectionFactory =
-                PeerConnectionFactory.builder()
+                PeerConnectionFactory
+                    .builder()
                     .setVideoEncoderFactory(
                         encoderFactory
                     )
@@ -86,12 +127,23 @@ class RealtimeManager(
                     )
                     .createPeerConnectionFactory()
 
-            initialized = true
+            initialized =
+                peerConnectionFactory != null
 
-            Log.d(
-                TAG,
-                "WebRTC berhasil diinisialisasi"
-            )
+            if (initialized) {
+
+                Log.d(
+                    TAG,
+                    "WebRTC berhasil diinisialisasi"
+                )
+
+            } else {
+
+                Log.e(
+                    TAG,
+                    "PeerConnectionFactory = null"
+                )
+            }
 
         } catch (e: Exception) {
 
@@ -100,8 +152,33 @@ class RealtimeManager(
                 "Gagal inisialisasi WebRTC",
                 e
             )
+
+            initialized = false
         }
     }
+
+    // =========================
+    // START SCREEN CAPTURE
+    // =========================
+
+    /*
+     * PENTING:
+     *
+     * Fungsi ini TIDAK boleh dipanggil
+     * langsung dari MainActivity.
+     *
+     * Fungsi ini dipanggil oleh
+     * ScreenCaptureService setelah:
+     *
+     * startForeground(
+     *     ...,
+     *     FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION
+     * )
+     *
+     * Dengan begitu Android sudah mengetahui
+     * bahwa aplikasi sedang menjalankan
+     * foreground service untuk MediaProjection.
+     */
 
     fun startScreenCapture(
         resultCode: Int,
@@ -109,14 +186,17 @@ class RealtimeManager(
     ) {
 
         if (!initialized) {
+
             initialize()
         }
 
         if (capturing) {
+
             Log.d(
                 TAG,
                 "Screen capture sudah aktif"
             )
+
             return
         }
 
@@ -124,10 +204,12 @@ class RealtimeManager(
             peerConnectionFactory
 
         if (factory == null) {
+
             Log.e(
                 TAG,
                 "PeerConnectionFactory belum tersedia"
             )
+
             return
         }
 
@@ -135,8 +217,12 @@ class RealtimeManager(
 
             Log.d(
                 TAG,
-                "Menyiapkan screen capture"
+                "Menyiapkan WebRTC screen capture"
             )
+
+            // =========================
+            // EGL / TEXTURE HELPER
+            // =========================
 
             val eglBase =
                 org.webrtc.EglBase.create()
@@ -147,8 +233,18 @@ class RealtimeManager(
                     eglBase.eglBaseContext
                 )
 
+            // =========================
+            // VIDEO SOURCE
+            // =========================
+
             videoSource =
-                factory.createVideoSource(false)
+                factory.createVideoSource(
+                    false
+                )
+
+            // =========================
+            // SCREEN CAPTURER
+            // =========================
 
             screenCapturer =
                 ScreenCapturerAndroid(
@@ -187,14 +283,31 @@ class RealtimeManager(
                     "Komponen screen capture tidak lengkap"
                 )
 
+                stopScreenCapture()
+
                 return
             }
 
+            // =========================
+            // INITIALIZE CAPTURER
+            // =========================
+
             capturer.initialize(
                 helper,
-                context,
+                context.applicationContext,
                 source.capturerObserver
             )
+
+            // =========================
+            // START CAPTURE
+            // =========================
+
+            /*
+             * Resolusi target.
+             *
+             * WebRTC akan menangani scaling
+             * sesuai kemampuan device.
+             */
 
             capturer.startCapture(
                 720,
@@ -202,13 +315,19 @@ class RealtimeManager(
                 30
             )
 
+            // =========================
+            // VIDEO TRACK
+            // =========================
+
             videoTrack =
                 factory.createVideoTrack(
                     "screen-track",
                     source
                 )
 
-            videoTrack?.setEnabled(true)
+            videoTrack?.setEnabled(
+                true
+            )
 
             capturing = true
 
@@ -216,6 +335,16 @@ class RealtimeManager(
                 TAG,
                 "Screen capture berhasil dimulai"
             )
+
+        } catch (e: SecurityException) {
+
+            Log.e(
+                TAG,
+                "SecurityException saat memulai MediaProjection",
+                e
+            )
+
+            stopScreenCapture()
 
         } catch (e: Exception) {
 
@@ -229,17 +358,24 @@ class RealtimeManager(
         }
     }
 
+    // =========================
+    // PEER CONNECTION
+    // =========================
+
     fun createPeerConnection() {
 
         if (!initialized) {
+
             initialize()
         }
 
         if (peerConnection != null) {
+
             Log.d(
                 TAG,
                 "PeerConnection sudah ada"
             )
+
             return
         }
 
@@ -247,10 +383,12 @@ class RealtimeManager(
             peerConnectionFactory
 
         if (factory == null) {
+
             Log.e(
                 TAG,
                 "PeerConnectionFactory tidak tersedia"
             )
+
             return
         }
 
@@ -271,15 +409,18 @@ class RealtimeManager(
                 )
 
             configuration.sdpSemantics =
-                PeerConnection.SdpSemantics.UNIFIED_PLAN
+                PeerConnection.SdpSemantics
+                    .UNIFIED_PLAN
 
             peerConnection =
                 factory.createPeerConnection(
                     configuration,
-                    object : PeerConnection.Observer {
+                    object :
+                        PeerConnection.Observer {
 
                         override fun onSignalingChange(
-                            state: PeerConnection.SignalingState
+                            state:
+                                PeerConnection.SignalingState
                         ) {
 
                             Log.d(
@@ -289,7 +430,8 @@ class RealtimeManager(
                         }
 
                         override fun onIceConnectionChange(
-                            state: PeerConnection.IceConnectionState
+                            state:
+                                PeerConnection.IceConnectionState
                         ) {
 
                             Log.d(
@@ -309,7 +451,8 @@ class RealtimeManager(
                         }
 
                         override fun onIceGatheringChange(
-                            state: PeerConnection.IceGatheringState
+                            state:
+                                PeerConnection.IceGatheringState
                         ) {
 
                             Log.d(
@@ -319,7 +462,8 @@ class RealtimeManager(
                         }
 
                         override fun onIceCandidate(
-                            candidate: IceCandidate
+                            candidate:
+                                IceCandidate
                         ) {
 
                             Log.d(
@@ -329,7 +473,8 @@ class RealtimeManager(
                         }
 
                         override fun onIceCandidatesRemoved(
-                            candidates: Array<out IceCandidate>
+                            candidates:
+                                Array<out IceCandidate>
                         ) {
 
                             Log.d(
@@ -339,7 +484,8 @@ class RealtimeManager(
                         }
 
                         override fun onAddStream(
-                            stream: org.webrtc.MediaStream
+                            stream:
+                                org.webrtc.MediaStream
                         ) {
 
                             Log.d(
@@ -349,7 +495,8 @@ class RealtimeManager(
                         }
 
                         override fun onRemoveStream(
-                            stream: org.webrtc.MediaStream
+                            stream:
+                                org.webrtc.MediaStream
                         ) {
 
                             Log.d(
@@ -359,7 +506,8 @@ class RealtimeManager(
                         }
 
                         override fun onDataChannel(
-                            dataChannel: org.webrtc.DataChannel
+                            dataChannel:
+                                org.webrtc.DataChannel
                         ) {
 
                             Log.d(
@@ -377,7 +525,8 @@ class RealtimeManager(
                         }
 
                         override fun onAddTrack(
-                            receiver: org.webrtc.RtpReceiver,
+                            receiver:
+                                org.webrtc.RtpReceiver,
                             mediaStreams:
                                 Array<out org.webrtc.MediaStream>
                         ) {
@@ -450,11 +599,17 @@ class RealtimeManager(
                 "PeerConnection berhasil dibuat"
             )
 
+            // =========================
+            // ADD SCREEN TRACK
+            // =========================
+
             videoTrack?.let { track ->
 
                 peerConnection?.addTrack(
                     track,
-                    listOf("screen-stream")
+                    listOf(
+                        "screen-stream"
+                    )
                 )
 
                 Log.d(
@@ -473,8 +628,13 @@ class RealtimeManager(
         }
     }
 
+    // =========================
+    // CREATE OFFER
+    // =========================
+
     fun createOffer(
-        callback: (SessionDescription?) -> Unit
+        callback:
+            (SessionDescription?) -> Unit
     ) {
 
         val connection =
@@ -488,6 +648,7 @@ class RealtimeManager(
             )
 
             callback(null)
+
             return
         }
 
@@ -510,10 +671,12 @@ class RealtimeManager(
             }
 
         connection.createOffer(
-            object : org.webrtc.SdpObserver {
+            object :
+                org.webrtc.SdpObserver {
 
                 override fun onCreateSuccess(
-                    description: SessionDescription
+                    description:
+                        SessionDescription
                 ) {
 
                     Log.d(
@@ -538,7 +701,9 @@ class RealtimeManager(
                                     "Local SDP berhasil diset"
                                 )
 
-                                callback(description)
+                                callback(
+                                    description
+                                )
                             }
 
                             override fun onCreateFailure(
@@ -592,6 +757,10 @@ class RealtimeManager(
             constraints
         )
     }
+
+    // =========================
+    // PUBLISH CLOUDFLARE
+    // =========================
 
     fun publishToCloudflare(
         sessionId: String,
@@ -667,6 +836,12 @@ class RealtimeManager(
                         "application/json"
                     )
 
+                    connectionHttp.connectTimeout =
+                        15000
+
+                    connectionHttp.readTimeout =
+                        30000
+
                     connectionHttp.doOutput =
                         true
 
@@ -695,6 +870,7 @@ class RealtimeManager(
                     )
 
                     connectionHttp.outputStream.use {
+
                         it.write(
                             body.toString()
                                 .toByteArray(
@@ -745,11 +921,14 @@ class RealtimeManager(
                         )
 
                         connectionHttp.disconnect()
+
                         return@thread
                     }
 
                     val json =
-                        JSONObject(responseText)
+                        JSONObject(
+                            responseText
+                        )
 
                     val answerSdp =
                         json.optString(
@@ -768,6 +947,7 @@ class RealtimeManager(
                         )
 
                         connectionHttp.disconnect()
+
                         return@thread
                     }
 
@@ -839,16 +1019,22 @@ class RealtimeManager(
                     callback(
                         false,
                         null,
-                        e.message ?: "Unknown error"
+                        e.message
+                            ?: "Unknown error"
                     )
                 }
             }
         }
     }
 
+    // =========================
+    // SET REMOTE ANSWER
+    // =========================
+
     fun setRemoteAnswer(
         answer: SessionDescription,
-        callback: (() -> Unit)? = null
+        callback:
+            (() -> Unit)? = null
     ) {
 
         val connection =
@@ -865,10 +1051,12 @@ class RealtimeManager(
         }
 
         connection.setRemoteDescription(
-            object : org.webrtc.SdpObserver {
+            object :
+                org.webrtc.SdpObserver {
 
                 override fun onCreateSuccess(
-                    description: SessionDescription
+                    description:
+                        SessionDescription
                 ) {
                 }
 
@@ -906,6 +1094,10 @@ class RealtimeManager(
         )
     }
 
+    // =========================
+    // ICE
+    // =========================
+
     fun addIceCandidate(
         candidate: IceCandidate
     ) {
@@ -933,13 +1125,29 @@ class RealtimeManager(
         )
     }
 
-    fun getVideoTrack(): VideoTrack? {
+    // =========================
+    // GET VIDEO TRACK
+    // =========================
+
+    fun getVideoTrack():
+        VideoTrack? {
+
         return videoTrack
     }
 
-    fun isCapturing(): Boolean {
+    // =========================
+    // CAPTURE STATUS
+    // =========================
+
+    fun isCapturing():
+        Boolean {
+
         return capturing
     }
+
+    // =========================
+    // STOP SCREEN CAPTURE
+    // =========================
 
     fun stopScreenCapture() {
 
@@ -961,25 +1169,64 @@ class RealtimeManager(
             )
         }
 
-        screenCapturer?.dispose()
-        screenCapturer = null
+        try {
 
-        videoTrack?.dispose()
-        videoTrack = null
+            screenCapturer?.dispose()
 
-        videoSource?.dispose()
-        videoSource = null
+        } catch (e: Exception) {
 
-        surfaceTextureHelper?.dispose()
-        surfaceTextureHelper = null
+            Log.e(
+                TAG,
+                "Gagal dispose screen capturer",
+                e
+            )
+        }
 
-        capturing = false
+        screenCapturer =
+            null
+
+        try {
+
+            videoTrack?.dispose()
+
+        } catch (_: Exception) {
+        }
+
+        videoTrack =
+            null
+
+        try {
+
+            videoSource?.dispose()
+
+        } catch (_: Exception) {
+        }
+
+        videoSource =
+            null
+
+        try {
+
+            surfaceTextureHelper?.dispose()
+
+        } catch (_: Exception) {
+        }
+
+        surfaceTextureHelper =
+            null
+
+        capturing =
+            false
 
         Log.d(
             TAG,
             "Screen capture dihentikan"
         )
     }
+
+    // =========================
+    // DISPOSE
+    // =========================
 
     fun dispose() {
 
@@ -990,14 +1237,31 @@ class RealtimeManager(
 
         stopScreenCapture()
 
-        peerConnection?.close()
-        peerConnection = null
+        try {
 
-        peerConnectionFactory?.dispose()
-        peerConnectionFactory = null
+            peerConnection?.close()
 
-        initialized = false
-        currentSessionId = null
+        } catch (_: Exception) {
+        }
+
+        peerConnection =
+            null
+
+        try {
+
+            peerConnectionFactory?.dispose()
+
+        } catch (_: Exception) {
+        }
+
+        peerConnectionFactory =
+            null
+
+        initialized =
+            false
+
+        currentSessionId =
+            null
 
         Log.d(
             TAG,
