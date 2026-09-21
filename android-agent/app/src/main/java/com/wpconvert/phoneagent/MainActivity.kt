@@ -90,10 +90,20 @@ class MainActivity : Activity() {
         // WEBSOCKET SERVER
         // =========================
 
-        webSocket =
-            WebSocketClientManager(this)
-
-        webSocket.connect()
+    android.util.Log.d(
+        "WebPhoneAgent",
+        "Membuat WebSocketClientManager"
+    )
+    
+    webSocket =
+        WebSocketClientManager(this)
+    
+    android.util.Log.d(
+        "WebPhoneAgent",
+        "Memanggil webSocket.connect()"
+    )
+    
+    webSocket.connect()
 
 
         window.addFlags(
