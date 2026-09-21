@@ -29,7 +29,8 @@ class MainActivity : Activity() {
 
     private val captureRequestCode = 1001
 
-    private val handler = Handler(Looper.getMainLooper())
+    private val handler =
+        Handler(Looper.getMainLooper())
 
     private val prefs by lazy {
         getSharedPreferences(
@@ -38,52 +39,61 @@ class MainActivity : Activity() {
         )
     }
 
-    private val statusPoll = object : Runnable {
+    private val statusPoll =
+        object : Runnable {
 
-        override fun run() {
+            override fun run() {
 
-            val active =
-                prefs.getBoolean(
-                    ScreenCaptureService.KEY_ACTIVE,
-                    false
+                val active =
+                    prefs.getBoolean(
+                        ScreenCaptureService.KEY_ACTIVE,
+                        false
+                    )
+
+                val width =
+                    prefs.getInt(
+                        ScreenCaptureService.KEY_WIDTH,
+                        0
+                    )
+
+                val height =
+                    prefs.getInt(
+                        ScreenCaptureService.KEY_HEIGHT,
+                        0
+                    )
+
+                if (active) {
+
+                    status.text =
+                        "Status: Screen capture aktif\n" +
+                        "${width} × ${height}"
+
+                    captureButton.text =
+                        "Hentikan screen capture"
+
+                } else {
+
+                    status.text =
+                        "Status: Menunggu izin screen capture"
+
+                    captureButton.text =
+                        "Izinkan akses layar"
+                }
+
+                handler.postDelayed(
+                    this,
+                    1000
                 )
-
-            val width =
-                prefs.getInt(
-                    ScreenCaptureService.KEY_WIDTH,
-                    0
-                )
-
-            val height =
-                prefs.getInt(
-                    ScreenCaptureService.KEY_HEIGHT,
-                    0
-                )
-
-            if (active) {
-
-                status.text =
-                    "Status: Screen capture aktif\n${width} × ${height}"
-
-                captureButton.text =
-                    "Hentikan screen capture"
-
-            } else {
-
-                status.text =
-                    "Status: Menunggu izin screen capture"
-
-                captureButton.text =
-                    "Izinkan akses layar"
             }
-
-            handler.postDelayed(this, 1000)
         }
-    }
 
-    override fun onCreate(savedInstanceState: Bundle?) {
+    override fun onCreate(
+        savedInstanceState: Bundle?
+    ) {
 
-        super.onCreate(savedInstanceState)
+        super.onCreate(
+            savedInstanceState
+        )
 
         // =========================
         // WEBSOCKET
@@ -188,7 +198,6 @@ class MainActivity : Activity() {
                 setOnClickListener {
 
                     openWriteSettingsPermission()
-
                 }
             }
 
@@ -222,9 +231,9 @@ class MainActivity : Activity() {
                                     ScreenCaptureService.ACTION_STOP
                             }
 
-                        startService(stopIntent)
-
-                        realtimeManager.stopScreenCapture()
+                        startService(
+                            stopIntent
+                        )
 
                     } else {
 
@@ -234,9 +243,7 @@ class MainActivity : Activity() {
                         )
 
                         requestScreenCapturePermission()
-
                     }
-
                 }
             }
 
@@ -250,7 +257,9 @@ class MainActivity : Activity() {
 
         setContentView(root)
 
-        handler.post(statusPoll)
+        handler.post(
+            statusPoll
+        )
     }
 
     private fun openWriteSettingsPermission() {
@@ -305,7 +314,9 @@ class MainActivity : Activity() {
 
         if (
             requestCode != captureRequestCode
-        ) return
+        ) {
+            return
+        }
 
         if (
             resultCode != RESULT_OK ||
@@ -326,6 +337,11 @@ class MainActivity : Activity() {
         // =========================
         // SCREEN CAPTURE SERVICE
         // =========================
+
+        android.util.Log.d(
+            "WebPhoneAgent",
+            "Menjalankan ScreenCaptureService"
+        )
 
         val serviceIntent =
             Intent(
@@ -363,26 +379,19 @@ class MainActivity : Activity() {
             )
         }
 
-        // =========================
-        // WEBRTC SCREEN CAPTURE
-        // =========================
-
-        android.util.Log.d(
-            "WebPhoneAgent",
-            "Memulai RealtimeManager screen capture"
-        )
-
-        realtimeManager.startScreenCapture(
-            resultCode,
-            data
-        )
-
-        android.util.Log.d(
-            "WebPhoneAgent",
-            "Membuat PeerConnection"
-        )
-
-        realtimeManager.createPeerConnection()
+        /*
+         * PENTING:
+         *
+         * Jangan memanggil:
+         *
+         * realtimeManager.startScreenCapture(...)
+         *
+         * dari Activity.
+         *
+         * ScreenCaptureService akan menangani
+         * MediaProjection setelah foreground
+         * service MEDIA_PROJECTION aktif.
+         */
 
         status.text =
             "Status: Memulai screen capture..."
