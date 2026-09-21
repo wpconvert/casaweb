@@ -24,8 +24,14 @@ class WebSocketClientManager(
         }
 
 
-        // GANTI DENGAN IP PC SERVER
-        val serverUrl = "wss://web-phone-oneforall.danip4848.workers.dev/ws"
+        // Cloudflare WebSocket server
+        val serverUrl =
+            "wss://web-phone-oneforall.danip4848.workers.dev/ws"
+
+
+        println(
+            "WebSocket: mencoba koneksi ke $serverUrl"
+        )
 
 
         socket = object : WebSocketClient(
@@ -33,9 +39,17 @@ class WebSocketClientManager(
         ) {
 
 
-            override fun onOpen(handshake: ServerHandshake?) {
+            override fun onOpen(
+                handshake: ServerHandshake?
+            ) {
 
-                val data = JSONObject()
+                println(
+                    "WebSocket connected"
+                )
+
+
+                val data =
+                    JSONObject()
 
 
                 data.put(
@@ -62,27 +76,32 @@ class WebSocketClientManager(
                 )
 
 
+                println(
+                    "Mengirim register: $data"
+                )
+
+
                 send(
                     data.toString()
                 )
 
 
                 println(
-                    "WebSocket connected"
+                    "Register terkirim"
                 )
 
             }
 
 
-
-            override fun onMessage(message: String?) {
+            override fun onMessage(
+                message: String?
+            ) {
 
                 println(
                     "Server: $message"
                 )
 
             }
-
 
 
             override fun onClose(
@@ -92,14 +111,31 @@ class WebSocketClientManager(
             ) {
 
                 println(
-                    "WebSocket closed: $reason"
+                    "WebSocket closed"
+                )
+
+                println(
+                    "Close code: $code"
+                )
+
+                println(
+                    "Close reason: $reason"
+                )
+
+                println(
+                    "Remote: $remote"
                 )
 
             }
 
 
+            override fun onError(
+                ex: Exception?
+            ) {
 
-            override fun onError(ex: Exception?) {
+                println(
+                    "WebSocket ERROR"
+                )
 
                 ex?.printStackTrace()
 
@@ -108,14 +144,21 @@ class WebSocketClientManager(
         }
 
 
-
         thread {
 
             try {
 
+                println(
+                    "WebSocket thread: connect()"
+                )
+
                 socket?.connect()
 
             } catch (e: Exception) {
+
+                println(
+                    "WebSocket connect exception"
+                )
 
                 e.printStackTrace()
 
@@ -124,7 +167,6 @@ class WebSocketClientManager(
         }
 
     }
-
 
 
     private fun getDeviceId(): String {
@@ -137,8 +179,11 @@ class WebSocketClientManager(
     }
 
 
-
     fun disconnect() {
+
+        println(
+            "WebSocket disconnect()"
+        )
 
         socket?.close()
 
