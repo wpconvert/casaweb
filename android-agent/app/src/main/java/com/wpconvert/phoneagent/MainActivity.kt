@@ -24,6 +24,9 @@ class MainActivity : Activity() {
     // WebSocket
     private lateinit var webSocket: WebSocketClientManager
 
+    // WebRTC / Cloudflare Realtime
+    private lateinit var realtimeManager: RealtimeManager
+
     private val captureRequestCode = 1001
 
     private val handler = Handler(Looper.getMainLooper())
@@ -34,7 +37,6 @@ class MainActivity : Activity() {
             MODE_PRIVATE
         )
     }
-
 
     private val statusPoll = object : Runnable {
 
@@ -58,7 +60,6 @@ class MainActivity : Activity() {
                     0
                 )
 
-
             if (active) {
 
                 status.text =
@@ -76,11 +77,9 @@ class MainActivity : Activity() {
                     "Izinkan akses layar"
             }
 
-
             handler.postDelayed(this, 1000)
         }
     }
-
 
     override fun onCreate(savedInstanceState: Bundle?) {
 
@@ -90,43 +89,60 @@ class MainActivity : Activity() {
         // WEBSOCKET SERVER
         // =========================
 
-    android.util.Log.d(
-        "WebPhoneAgent",
-        "Membuat WebSocketClientManager"
-    )
-    
-    webSocket =
-        WebSocketClientManager(this)
-    
-    android.util.Log.d(
-        "WebPhoneAgent",
-        "Memanggil webSocket.connect()"
-    )
-    
-    webSocket.connect()
+        android.util.Log.d(
+            "WebPhoneAgent",
+            "Membuat WebSocketClientManager"
+        )
 
+        webSocket =
+            WebSocketClientManager(this)
+
+        android.util.Log.d(
+            "WebPhoneAgent",
+            "Memanggil webSocket.connect()"
+        )
+
+        webSocket.connect()
+
+        // =========================
+        // WEBRTC / CLOUDFLARE
+        // =========================
+
+        android.util.Log.d(
+            "WebPhoneAgent",
+            "Membuat RealtimeManager"
+        )
+
+        realtimeManager =
+            RealtimeManager(this)
+
+        android.util.Log.d(
+            "WebPhoneAgent",
+            "Memanggil realtimeManager.initialize()"
+        )
+
+        realtimeManager.initialize()
 
         window.addFlags(
             WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON
         )
 
+        val root =
+            LinearLayout(this).apply {
 
-        val root = LinearLayout(this).apply {
+                orientation =
+                    LinearLayout.VERTICAL
 
-            orientation =
-                LinearLayout.VERTICAL
+                gravity =
+                    Gravity.TOP
 
-            gravity =
-                Gravity.TOP
-
-            setPadding(
-                32,
-                48,
-                32,
-                32
-            )
-        }
-
+                setPadding(
+                    32,
+                    48,
+                    32,
+                    32
+                )
+            }
 
         val title =
             TextView(this).apply {
@@ -137,7 +153,6 @@ class MainActivity : Activity() {
                 textSize =
                     24f
             }
-
 
         status =
             TextView(this).apply {
@@ -156,7 +171,6 @@ class MainActivity : Activity() {
                 )
             }
 
-
         brightnessButton =
             Button(this).apply {
 
@@ -169,7 +183,6 @@ class MainActivity : Activity() {
 
                 }
             }
-
 
         captureButton =
             Button(this).apply {
@@ -196,7 +209,6 @@ class MainActivity : Activity() {
                                     ScreenCaptureService.ACTION_STOP
                             }
 
-
                         startService(stopIntent)
 
                     } else {
@@ -208,7 +220,6 @@ class MainActivity : Activity() {
                 }
             }
 
-
         root.addView(title)
 
         root.addView(status)
@@ -217,17 +228,17 @@ class MainActivity : Activity() {
 
         root.addView(captureButton)
 
-
         setContentView(root)
-
 
         handler.post(statusPoll)
     }
 
-
     private fun openWriteSettingsPermission() {
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+        if (
+            Build.VERSION.SDK_INT >=
+            Build.VERSION_CODES.M
+        ) {
 
             val intent =
                 Intent(
@@ -240,11 +251,9 @@ class MainActivity : Activity() {
                         )
                 }
 
-
             startActivity(intent)
         }
     }
-
 
     private fun requestScreenCapturePermission() {
 
@@ -253,13 +262,11 @@ class MainActivity : Activity() {
                 MediaProjectionManager::class.java
             )
 
-
         startActivityForResult(
             manager.createScreenCaptureIntent(),
             captureRequestCode
         )
     }
-
 
     @Deprecated(
         "Deprecated in Android API, kept for compatibility"
@@ -276,11 +283,9 @@ class MainActivity : Activity() {
             data
         )
 
-
         if (
             requestCode != captureRequestCode
         ) return
-
 
         if (
             resultCode != RESULT_OK ||
@@ -293,7 +298,6 @@ class MainActivity : Activity() {
             return
         }
 
-
         val serviceIntent =
             Intent(
                 this,
@@ -303,12 +307,10 @@ class MainActivity : Activity() {
                 action =
                     ScreenCaptureService.ACTION_START
 
-
                 putExtra(
                     ScreenCaptureService.EXTRA_RESULT_CODE,
                     resultCode
                 )
-
 
                 putExtra(
                     ScreenCaptureService.EXTRA_RESULT_DATA,
@@ -316,25 +318,25 @@ class MainActivity : Activity() {
                 )
             }
 
-
         if (
             Build.VERSION.SDK_INT >=
             Build.VERSION_CODES.O
         ) {
 
-            startForegroundService(serviceIntent)
+            startForegroundService(
+                serviceIntent
+            )
 
         } else {
 
-            startService(serviceIntent)
-
+            startService(
+                serviceIntent
+            )
         }
-
 
         status.text =
             "Status: Memulai screen capture..."
     }
-
 
     override fun onDestroy() {
 
@@ -344,6 +346,9 @@ class MainActivity : Activity() {
 
         // Tutup koneksi WebSocket
         webSocket.disconnect()
+
+        // Tutup WebRTC
+        realtimeManager.dispose()
 
         super.onDestroy()
     }
