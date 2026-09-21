@@ -86,7 +86,7 @@ class MainActivity : Activity() {
         super.onCreate(savedInstanceState)
 
         // =========================
-        // WEBSOCKET SERVER
+        // WEBSOCKET
         // =========================
 
         android.util.Log.d(
@@ -123,9 +123,17 @@ class MainActivity : Activity() {
 
         realtimeManager.initialize()
 
+        // =========================
+        // KEEP SCREEN ON
+        // =========================
+
         window.addFlags(
             WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON
         )
+
+        // =========================
+        // UI
+        // =========================
 
         val root =
             LinearLayout(this).apply {
@@ -199,6 +207,11 @@ class MainActivity : Activity() {
                         )
                     ) {
 
+                        android.util.Log.d(
+                            "WebPhoneAgent",
+                            "Menghentikan screen capture"
+                        )
+
                         val stopIntent =
                             Intent(
                                 this@MainActivity,
@@ -211,7 +224,14 @@ class MainActivity : Activity() {
 
                         startService(stopIntent)
 
+                        realtimeManager.stopScreenCapture()
+
                     } else {
+
+                        android.util.Log.d(
+                            "WebPhoneAgent",
+                            "Meminta izin screen capture"
+                        )
 
                         requestScreenCapturePermission()
 
@@ -295,8 +315,17 @@ class MainActivity : Activity() {
             status.text =
                 "Status: Izin screen capture ditolak"
 
+            android.util.Log.e(
+                "WebPhoneAgent",
+                "Izin screen capture ditolak"
+            )
+
             return
         }
+
+        // =========================
+        // SCREEN CAPTURE SERVICE
+        // =========================
 
         val serviceIntent =
             Intent(
@@ -334,6 +363,27 @@ class MainActivity : Activity() {
             )
         }
 
+        // =========================
+        // WEBRTC SCREEN CAPTURE
+        // =========================
+
+        android.util.Log.d(
+            "WebPhoneAgent",
+            "Memulai RealtimeManager screen capture"
+        )
+
+        realtimeManager.startScreenCapture(
+            resultCode,
+            data
+        )
+
+        android.util.Log.d(
+            "WebPhoneAgent",
+            "Membuat PeerConnection"
+        )
+
+        realtimeManager.createPeerConnection()
+
         status.text =
             "Status: Memulai screen capture..."
     }
@@ -344,10 +394,16 @@ class MainActivity : Activity() {
             statusPoll
         )
 
-        // Tutup koneksi WebSocket
+        // =========================
+        // WEBSOCKET
+        // =========================
+
         webSocket.disconnect()
 
-        // Tutup WebRTC
+        // =========================
+        // WEBRTC
+        // =========================
+
         realtimeManager.dispose()
 
         super.onDestroy()
