@@ -1,12 +1,11 @@
 package com.wpconvert.phoneagent
 
 import android.content.Context
-import android.media.projection.MediaProjection
+import android.content.Intent
 import android.util.Log
+import android.media.projection.MediaProjection
 import org.webrtc.AudioSource
 import org.webrtc.AudioTrack
-import org.webrtc.Camera2Enumerator
-import org.webrtc.CameraVideoCapturer
 import org.webrtc.IceCandidate
 import org.webrtc.MediaConstraints
 import org.webrtc.PeerConnection
@@ -40,9 +39,6 @@ class RealtimeManager(
     private var initialized = false
     private var capturing = false
 
-    /**
-     * Inisialisasi WebRTC.
-     */
     fun initialize() {
         if (initialized) {
             Log.d(TAG, "WebRTC sudah diinisialisasi")
@@ -59,16 +55,19 @@ class RealtimeManager(
                     .createInitializationOptions()
             )
 
+            val eglBase =
+                org.webrtc.EglBase.create()
+
             val encoderFactory =
                 org.webrtc.DefaultVideoEncoderFactory(
-                    org.webrtc.EglBase.create().eglBaseContext,
+                    eglBase.eglBaseContext,
                     true,
                     true
                 )
 
             val decoderFactory =
                 org.webrtc.DefaultVideoDecoderFactory(
-                    org.webrtc.EglBase.create().eglBaseContext
+                    eglBase.eglBaseContext
                 )
 
             peerConnectionFactory =
@@ -79,49 +78,66 @@ class RealtimeManager(
 
             initialized = true
 
-            Log.d(TAG, "WebRTC berhasil diinisialisasi")
+            Log.d(
+                TAG,
+                "WebRTC berhasil diinisialisasi"
+            )
 
         } catch (e: Exception) {
-            Log.e(TAG, "Gagal inisialisasi WebRTC", e)
+            Log.e(
+                TAG,
+                "Gagal inisialisasi WebRTC",
+                e
+            )
         }
     }
 
-    /**
-     * Mulai capture layar Android.
-     *
-     * resultCode dan projectionData berasal dari
-     * MediaProjection permission dialog Android.
-     */
     fun startScreenCapture(
         resultCode: Int,
-        projectionData: android.content.Intent
+        projectionData: Intent
     ) {
+
         if (!initialized) {
             initialize()
         }
 
         if (capturing) {
-            Log.d(TAG, "Screen capture sudah aktif")
+            Log.d(
+                TAG,
+                "Screen capture sudah aktif"
+            )
             return
         }
 
-        val factory = peerConnectionFactory
+        val factory =
+            peerConnectionFactory
 
         if (factory == null) {
-            Log.e(TAG, "PeerConnectionFactory belum tersedia")
+            Log.e(
+                TAG,
+                "PeerConnectionFactory belum tersedia"
+            )
             return
         }
 
         try {
-            Log.d(TAG, "Menyiapkan screen capture")
+
+            Log.d(
+                TAG,
+                "Menyiapkan screen capture"
+            )
+
+            val eglBase =
+                org.webrtc.EglBase.create()
 
             surfaceTextureHelper =
                 SurfaceTextureHelper.create(
                     "ScreenCaptureThread",
-                    org.webrtc.EglBase.create().eglBaseContext
+                    eglBase.eglBaseContext
                 )
 
-            videoSource = factory.createVideoSource(false)
+            videoSource =
+                factory.createVideoSource(false)
 
             screenCapturer =
                 ScreenCapturerAndroid(
@@ -129,32 +145,35 @@ class RealtimeManager(
                     object : MediaProjection.Callback() {
 
                         override fun onStop() {
+
                             Log.d(
                                 TAG,
                                 "MediaProjection dihentikan Android"
                             )
 
                             capturing = false
-
-                            try {
-                                videoSource?.capturerStopped()
-                            } catch (e: Exception) {
-                                Log.e(
-                                    TAG,
-                                    "Gagal memberi tahu videoSource",
-                                    e
-                                )
-                            }
                         }
                     }
                 )
 
-            val capturer = screenCapturer
-            val helper = surfaceTextureHelper
-            val source = videoSource
+            val capturer =
+                screenCapturer
 
-            if (capturer == null || helper == null || source == null) {
-                Log.e(TAG, "Komponen screen capture tidak lengkap")
+            val helper =
+                surfaceTextureHelper
+
+            val source =
+                videoSource
+
+            if (
+                capturer == null ||
+                helper == null ||
+                source == null
+            ) {
+                Log.e(
+                    TAG,
+                    "Komponen screen capture tidak lengkap"
+                )
                 return
             }
 
@@ -186,6 +205,7 @@ class RealtimeManager(
             )
 
         } catch (e: Exception) {
+
             Log.e(
                 TAG,
                 "Gagal memulai screen capture",
@@ -196,9 +216,6 @@ class RealtimeManager(
         }
     }
 
-    /**
-     * Membuat PeerConnection.
-     */
     fun createPeerConnection() {
 
         if (!initialized) {
@@ -206,11 +223,15 @@ class RealtimeManager(
         }
 
         if (peerConnection != null) {
-            Log.d(TAG, "PeerConnection sudah ada")
+            Log.d(
+                TAG,
+                "PeerConnection sudah ada"
+            )
             return
         }
 
-        val factory = peerConnectionFactory
+        val factory =
+            peerConnectionFactory
 
         if (factory == null) {
             Log.e(
@@ -225,7 +246,9 @@ class RealtimeManager(
             val iceServers =
                 listOf(
                     PeerConnection.IceServer
-                        .builder("stun:stun.cloudflare.com:3478")
+                        .builder(
+                            "stun:stun.cloudflare.com:3478"
+                        )
                         .createIceServer()
                 )
 
@@ -405,6 +428,7 @@ class RealtimeManager(
             }
 
         } catch (e: Exception) {
+
             Log.e(
                 TAG,
                 "Gagal membuat PeerConnection",
@@ -413,14 +437,12 @@ class RealtimeManager(
         }
     }
 
-    /**
-     * Membuat SDP Offer.
-     */
     fun createOffer(
         callback: (SessionDescription?) -> Unit
     ) {
 
-        val connection = peerConnection
+        val connection =
+            peerConnection
 
         if (connection == null) {
             Log.e(
@@ -434,6 +456,7 @@ class RealtimeManager(
 
         val constraints =
             MediaConstraints().apply {
+
                 mandatory.add(
                     MediaConstraints.KeyValuePair(
                         "OfferToReceiveAudio",
@@ -482,6 +505,7 @@ class RealtimeManager(
                             override fun onCreateFailure(
                                 error: String
                             ) {
+
                                 Log.e(
                                     TAG,
                                     "Local SDP create failure: $error"
@@ -493,6 +517,7 @@ class RealtimeManager(
                             override fun onSetFailure(
                                 error: String
                             ) {
+
                                 Log.e(
                                     TAG,
                                     "Local SDP set failure: $error"
@@ -529,15 +554,13 @@ class RealtimeManager(
         )
     }
 
-    /**
-     * Set remote SDP answer.
-     */
     fun setRemoteAnswer(
         answer: SessionDescription,
         callback: (() -> Unit)? = null
     ) {
 
-        val connection = peerConnection
+        val connection =
+            peerConnection
 
         if (connection == null) {
             Log.e(
@@ -568,6 +591,7 @@ class RealtimeManager(
                 override fun onCreateFailure(
                     error: String
                 ) {
+
                     Log.e(
                         TAG,
                         "Remote SDP create failure: $error"
@@ -577,6 +601,7 @@ class RealtimeManager(
                 override fun onSetFailure(
                     error: String
                 ) {
+
                     Log.e(
                         TAG,
                         "Remote SDP set failure: $error"
@@ -587,14 +612,12 @@ class RealtimeManager(
         )
     }
 
-    /**
-     * Tambahkan ICE candidate dari server.
-     */
     fun addIceCandidate(
         candidate: IceCandidate
     ) {
 
-        val connection = peerConnection
+        val connection =
+            peerConnection
 
         if (connection == null) {
             Log.e(
@@ -612,23 +635,14 @@ class RealtimeManager(
         )
     }
 
-    /**
-     * Ambil video track.
-     */
     fun getVideoTrack(): VideoTrack? {
         return videoTrack
     }
 
-    /**
-     * Apakah screen capture sedang aktif.
-     */
     fun isCapturing(): Boolean {
         return capturing
     }
 
-    /**
-     * Hentikan screen capture.
-     */
     fun stopScreenCapture() {
 
         Log.d(
@@ -637,8 +651,11 @@ class RealtimeManager(
         )
 
         try {
+
             screenCapturer?.stopCapture()
+
         } catch (e: Exception) {
+
             Log.e(
                 TAG,
                 "Gagal stop screen capturer",
@@ -666,9 +683,6 @@ class RealtimeManager(
         )
     }
 
-    /**
-     * Tutup PeerConnection dan semua resource WebRTC.
-     */
     fun dispose() {
 
         Log.d(
