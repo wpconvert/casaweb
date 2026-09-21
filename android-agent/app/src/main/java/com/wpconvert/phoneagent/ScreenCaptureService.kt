@@ -1,5 +1,6 @@
 package com.wpconvert.phoneagent
 
+import android.app.Activity
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -8,10 +9,6 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
-import android.graphics.PixelFormat
-import android.hardware.display.DisplayManager
-import android.hardware.display.VirtualDisplay
-import android.media.ImageReader
 import android.media.projection.MediaProjection
 import android.media.projection.MediaProjectionManager
 import android.os.Build
@@ -19,37 +16,102 @@ import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
 import android.os.PowerManager
-
+import android.util.Log
 
 class ScreenCaptureService : Service() {
 
+    companion object {
 
-    private var mediaProjection: MediaProjection? = null
-    private var virtualDisplay: VirtualDisplay? = null
-    private var imageReader: ImageReader? = null
+        const val PREFS_NAME =
+            "web_phone_agent"
 
+        const val KEY_ACTIVE =
+            "screen_capture_active"
 
-    private var wakeLock: PowerManager.WakeLock? = null
+        const val KEY_WIDTH =
+            "screen_capture_width"
 
+        const val KEY_HEIGHT =
+            "screen_capture_height"
+
+        const val KEY_LAST_FRAME_AT =
+            "screen_capture_last_frame_at"
+
+        const val ACTION_START =
+            "com.wpconvert.phoneagent.START_CAPTURE"
+
+        const val ACTION_STOP =
+            "com.wpconvert.phoneagent.STOP_CAPTURE"
+
+        const val EXTRA_RESULT_CODE =
+            "result_code"
+
+        const val EXTRA_RESULT_DATA =
+            "result_data"
+
+        private const val CHANNEL_ID =
+            "web_phone_agent_capture"
+
+        private const val NOTIFICATION_ID =
+            1001
+
+        private const val TAG =
+            "ScreenCaptureService"
+    }
+
+    // =========================
+    // HANDLER
+    // =========================
 
     private val serviceHandler =
         Handler(Looper.getMainLooper())
 
+    // =========================
+    // REALTIME / WEBRTC
+    // =========================
+
+    private var realtimeManager: RealtimeManager? =
+        null
+
+    // =========================
+    // MEDIA PROJECTION
+    // =========================
+
+    private var mediaProjection: MediaProjection? =
+        null
+
+    // =========================
+    // WAKE LOCK
+    // =========================
+
+    private var wakeLock: PowerManager.WakeLock? =
+        null
+
+    // =========================
+    // PREFS
+    // =========================
 
     private val prefs by lazy {
+
         getSharedPreferences(
             PREFS_NAME,
             MODE_PRIVATE
         )
     }
 
-
-
+    // =========================
+    // MEDIA PROJECTION CALLBACK
+    // =========================
 
     private val projectionCallback =
         object : MediaProjection.Callback() {
 
             override fun onStop() {
+
+                Log.d(
+                    TAG,
+                    "MediaProjection dihentikan Android"
+                )
 
                 prefs.edit()
                     .putBoolean(
@@ -58,27 +120,41 @@ class ScreenCaptureService : Service() {
                     )
                     .apply()
 
+                realtimeManager?.stopScreenCapture()
 
-                cleanupCapture()
+                realtimeManager?.dispose()
+
+                realtimeManager = null
+
+                mediaProjection = null
+
+                releaseWakeLock()
+
+                stopForegroundCompat()
 
                 stopSelf()
             }
         }
 
-
-
-
+    // =========================
+    // SERVICE CREATE
+    // =========================
 
     override fun onCreate() {
 
         super.onCreate()
 
+        Log.d(
+            TAG,
+            "ScreenCaptureService dibuat"
+        )
+
         createNotificationChannel()
     }
 
-
-
-
+    // =========================
+    // START COMMAND
+    // =========================
 
     override fun onStartCommand(
         intent: Intent?,
@@ -86,41 +162,48 @@ class ScreenCaptureService : Service() {
         startId: Int
     ): Int {
 
+        Log.d(
+            TAG,
+            "onStartCommand action=${intent?.action}"
+        )
 
-        when(intent?.action) {
+        when (intent?.action) {
 
+            // =========================
+            // STOP
+            // =========================
 
             ACTION_STOP -> {
 
+                Log.d(
+                    TAG,
+                    "ACTION_STOP diterima"
+                )
 
-                prefs.edit()
-                    .putBoolean(
-                        KEY_ACTIVE,
-                        false
-                    )
-                    .apply()
-
-
-                cleanupCapture()
-
-
-                stopForegroundCompat()
-
-                stopSelf()
-
+                stopCapture()
 
                 return START_NOT_STICKY
             }
 
-
-
+            // =========================
+            // START
+            // =========================
 
             ACTION_START -> {
 
+                Log.d(
+                    TAG,
+                    "ACTION_START diterima"
+                )
+
+                /*
+                 * PENTING:
+                 *
+                 * Foreground service harus aktif
+                 * SEBELUM MediaProjection digunakan.
+                 */
 
                 startForegroundWithNotification()
-
-
 
                 val resultCode =
                     intent.getIntExtra(
@@ -128,10 +211,10 @@ class ScreenCaptureService : Service() {
                         -1
                     )
 
-
-
                 val data =
-                    if(Build.VERSION.SDK_INT >= 33){
+                    if (
+                        Build.VERSION.SDK_INT >= 33
+                    ) {
 
                         intent.getParcelableExtra(
                             EXTRA_RESULT_DATA,
@@ -146,48 +229,58 @@ class ScreenCaptureService : Service() {
                         )
                     }
 
-
-
-
-                if(
-                    resultCode != android.app.Activity.RESULT_OK ||
+                if (
+                    resultCode !=
+                    Activity.RESULT_OK ||
                     data == null
-                ){
+                ) {
+
+                    Log.e(
+                        TAG,
+                        "Data MediaProjection tidak valid"
+                    )
+
+                    prefs.edit()
+                        .putBoolean(
+                            KEY_ACTIVE,
+                            false
+                        )
+                        .apply()
+
+                    stopForegroundCompat()
 
                     stopSelf()
 
                     return START_NOT_STICKY
                 }
 
-
-
-
                 startCapture(
                     resultCode,
                     data
                 )
             }
-
         }
-
 
         return START_STICKY
     }
 
-
-
-
+    // =========================
+    // FOREGROUND SERVICE
+    // =========================
 
     private fun startForegroundWithNotification() {
-
 
         val notification =
             buildNotification()
 
+        if (
+            Build.VERSION.SDK_INT >= 29
+        ) {
 
-
-        if(Build.VERSION.SDK_INT >= 29){
-
+            Log.d(
+                TAG,
+                "Memulai foreground service MEDIA_PROJECTION"
+            )
 
             startForeground(
                 NOTIFICATION_ID,
@@ -195,9 +288,7 @@ class ScreenCaptureService : Service() {
                 ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION
             )
 
-
         } else {
-
 
             startForeground(
                 NOTIFICATION_ID,
@@ -205,299 +296,424 @@ class ScreenCaptureService : Service() {
             )
         }
     }
-        private fun startCapture(
+
+    // =========================
+    // START CAPTURE
+    // =========================
+
+    private fun startCapture(
         resultCode: Int,
         data: Intent
     ) {
 
+        if (
+            realtimeManager != null &&
+            realtimeManager?.isCapturing() == true
+        ) {
 
-        if (mediaProjection != null)
+            Log.d(
+                TAG,
+                "Screen capture sudah aktif"
+            )
+
             return
+        }
 
+        Log.d(
+            TAG,
+            "Menyiapkan screen capture"
+        )
 
+        try {
 
-        acquireScreenWakeLock()
+            // =========================
+            // SCREEN STATUS
+            // =========================
 
+            val metrics =
+                resources.displayMetrics
 
+            val width =
+                metrics.widthPixels
 
-        val manager =
-            getSystemService(
-                MediaProjectionManager::class.java
+            val height =
+                metrics.heightPixels
+
+            Log.d(
+                TAG,
+                "Display: ${width}x${height}"
             )
 
+            prefs.edit()
+                .putInt(
+                    KEY_WIDTH,
+                    width
+                )
+                .putInt(
+                    KEY_HEIGHT,
+                    height
+                )
+                .apply()
 
+            // =========================
+            // WAKE LOCK
+            // =========================
 
-        val projection =
-            manager.getMediaProjection(
-                resultCode,
-                data
-            )
-            ?: run {
+            acquireScreenWakeLock()
+
+            // =========================
+            // MEDIA PROJECTION
+            // =========================
+
+            val projectionManager =
+                getSystemService(
+                    MediaProjectionManager::class.java
+                )
+
+            val projection =
+                projectionManager.getMediaProjection(
+                    resultCode,
+                    data
+                )
+
+            if (projection == null) {
+
+                Log.e(
+                    TAG,
+                    "MediaProjection = null"
+                )
 
                 releaseWakeLock()
+
+                stopForegroundCompat()
 
                 stopSelf()
 
                 return
             }
 
+            mediaProjection =
+                projection
 
-
-        mediaProjection = projection
-
-
-
-        projection.registerCallback(
-            projectionCallback,
-            serviceHandler
-        )
-
-
-
-        val metrics =
-            resources.displayMetrics
-
-
-        val width =
-            metrics.widthPixels
-
-
-        val height =
-            metrics.heightPixels
-
-
-        val density =
-            metrics.densityDpi
-
-
-
-
-        imageReader =
-            ImageReader.newInstance(
-                width,
-                height,
-                PixelFormat.RGBA_8888,
-                2
-            )
-
-
-
-
-        imageReader?.setOnImageAvailableListener(
-            { reader ->
-
-
-                val image =
-                    reader.acquireLatestImage()
-                    ?: return@setOnImageAvailableListener
-
-
-
-                try {
-
-
-                    prefs.edit()
-                        .putBoolean(
-                            KEY_ACTIVE,
-                            true
-                        )
-                        .putLong(
-                            KEY_LAST_FRAME_AT,
-                            System.currentTimeMillis()
-                        )
-                        .putInt(
-                            KEY_WIDTH,
-                            width
-                        )
-                        .putInt(
-                            KEY_HEIGHT,
-                            height
-                        )
-                        .apply()
-
-
-
-                } finally {
-
-                    image.close()
-                }
-
-
-
-            },
-            serviceHandler
-        )
-
-
-
-
-
-        virtualDisplay =
-            projection.createVirtualDisplay(
-                "WebPhoneAgentScreen",
-                width,
-                height,
-                density,
-                DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
-                imageReader!!.surface,
-                null,
+            projection.registerCallback(
+                projectionCallback,
                 serviceHandler
             )
 
+            Log.d(
+                TAG,
+                "MediaProjection berhasil dibuat"
+            )
 
+            // =========================
+            // REALTIME MANAGER
+            // =========================
 
+            Log.d(
+                TAG,
+                "Membuat RealtimeManager"
+            )
+
+            val manager =
+                RealtimeManager(
+                    applicationContext
+                )
+
+            realtimeManager =
+                manager
+
+            Log.d(
+                TAG,
+                "Inisialisasi WebRTC"
+            )
+
+            manager.initialize()
+
+            // =========================
+            // WEBRTC SCREEN CAPTURE
+            // =========================
+
+            Log.d(
+                TAG,
+                "Memulai WebRTC screen capture"
+            )
+
+            manager.startScreenCapture(
+                resultCode,
+                data
+            )
+
+            // =========================
+            // PEER CONNECTION
+            // =========================
+
+            Log.d(
+                TAG,
+                "Membuat PeerConnection"
+            )
+
+            manager.createPeerConnection()
+
+            // =========================
+            // STATUS
+            // =========================
+
+            if (
+                manager.isCapturing()
+            ) {
+
+                prefs.edit()
+                    .putBoolean(
+                        KEY_ACTIVE,
+                        true
+                    )
+                    .putLong(
+                        KEY_LAST_FRAME_AT,
+                        System.currentTimeMillis()
+                    )
+                    .apply()
+
+                Log.d(
+                    TAG,
+                    "WebRTC screen capture AKTIF"
+                )
+
+            } else {
+
+                Log.e(
+                    TAG,
+                    "WebRTC screen capture gagal aktif"
+                )
+
+                prefs.edit()
+                    .putBoolean(
+                        KEY_ACTIVE,
+                        false
+                    )
+                    .apply()
+            }
+
+        } catch (e: SecurityException) {
+
+            Log.e(
+                TAG,
+                "SecurityException saat MediaProjection",
+                e
+            )
+
+            prefs.edit()
+                .putBoolean(
+                    KEY_ACTIVE,
+                    false
+                )
+                .apply()
+
+            cleanupCapture()
+
+            stopForegroundCompat()
+
+            stopSelf()
+
+        } catch (e: Exception) {
+
+            Log.e(
+                TAG,
+                "Gagal memulai screen capture",
+                e
+            )
+
+            prefs.edit()
+                .putBoolean(
+                    KEY_ACTIVE,
+                    false
+                )
+                .apply()
+
+            cleanupCapture()
+
+            stopForegroundCompat()
+
+            stopSelf()
+        }
+    }
+
+    // =========================
+    // STOP CAPTURE
+    // =========================
+
+    private fun stopCapture() {
+
+        Log.d(
+            TAG,
+            "Menghentikan screen capture"
+        )
 
         prefs.edit()
             .putBoolean(
                 KEY_ACTIVE,
-                true
-            )
-            .putInt(
-                KEY_WIDTH,
-                width
-            )
-            .putInt(
-                KEY_HEIGHT,
-                height
+                false
             )
             .apply()
 
+        cleanupCapture()
+
+        stopForegroundCompat()
+
+        stopSelf()
     }
 
-
-
-
-
-
-    private fun acquireScreenWakeLock() {
-
-
-        if (wakeLock?.isHeld == true)
-            return
-
-
-
-
-        val powerManager =
-            getSystemService(
-                Context.POWER_SERVICE
-            ) as PowerManager
-
-
-
-
-
-        wakeLock =
-            powerManager.newWakeLock(
-                PowerManager.SCREEN_DIM_WAKE_LOCK,
-                "WebPhoneAgent::ScreenDimWakeLock"
-            )
-
-
-
-        wakeLock?.setReferenceCounted(false)
-
-
-
-        wakeLock?.acquire()
-
-    }
-
-
-
-
-
+    // =========================
+    // CLEANUP
+    // =========================
 
     private fun cleanupCapture() {
 
+        Log.d(
+            TAG,
+            "Cleanup capture"
+        )
 
-        imageReader?.setOnImageAvailableListener(
-            null,
+        try {
+
+            realtimeManager?.stopScreenCapture()
+
+        } catch (e: Exception) {
+
+            Log.e(
+                TAG,
+                "Gagal stop WebRTC capture",
+                e
+            )
+        }
+
+        try {
+
+            realtimeManager?.dispose()
+
+        } catch (e: Exception) {
+
+            Log.e(
+                TAG,
+                "Gagal dispose RealtimeManager",
+                e
+            )
+        }
+
+        realtimeManager =
             null
-        )
 
+        try {
 
+            mediaProjection?.unregisterCallback(
+                projectionCallback
+            )
 
-        imageReader?.close()
+        } catch (_: Exception) {
+        }
 
-        imageReader = null
+        try {
 
+            mediaProjection?.stop()
 
+        } catch (_: Exception) {
+        }
 
-
-        virtualDisplay?.release()
-
-        virtualDisplay = null
-
-
-
-
-        mediaProjection?.unregisterCallback(
-            projectionCallback
-        )
-
-
-
-        mediaProjection?.stop()
-
-        mediaProjection = null
-
-
-
+        mediaProjection =
+            null
 
         releaseWakeLock()
     }
 
+    // =========================
+    // WAKE LOCK
+    // =========================
 
+    private fun acquireScreenWakeLock() {
 
-
-
-
-    private fun releaseWakeLock() {
-
+        if (
+            wakeLock?.isHeld == true
+        ) {
+            return
+        }
 
         try {
 
+            val powerManager =
+                getSystemService(
+                    Context.POWER_SERVICE
+                ) as PowerManager
+
+            /*
+             * Ini hanya menjaga proses CPU tetap aktif.
+             *
+             * Kita tidak mengandalkan WakeLock
+             * untuk mencegah lock screen.
+             */
+
+            wakeLock =
+                powerManager.newWakeLock(
+                    PowerManager.PARTIAL_WAKE_LOCK,
+                    "WebPhoneAgent::CaptureWakeLock"
+                )
+
+            wakeLock?.setReferenceCounted(
+                false
+            )
+
+            wakeLock?.acquire()
+
+            Log.d(
+                TAG,
+                "PARTIAL_WAKE_LOCK aktif"
+            )
+
+        } catch (e: Exception) {
+
+            Log.e(
+                TAG,
+                "Gagal membuat WakeLock",
+                e
+            )
+        }
+    }
+
+    private fun releaseWakeLock() {
+
+        try {
 
             wakeLock?.let {
 
-
-                if (it.isHeld) {
+                if (
+                    it.isHeld
+                ) {
 
                     it.release()
                 }
             }
 
-
         } catch (_: Exception) {
-
         }
 
-
-
-        wakeLock = null
+        wakeLock =
+            null
     }
 
-
-
-
-
+    // =========================
+    // NOTIFICATION CHANNEL
+    // =========================
 
     private fun createNotificationChannel() {
 
-
-        if (Build.VERSION.SDK_INT < 26)
+        if (
+            Build.VERSION.SDK_INT < 26
+        ) {
             return
-
-
-
+        }
 
         val manager =
             getSystemService(
                 NotificationManager::class.java
             )
-
-
 
         val channel =
             NotificationChannel(
@@ -506,20 +722,19 @@ class ScreenCaptureService : Service() {
                 NotificationManager.IMPORTANCE_LOW
             )
 
-
+        channel.description =
+            "Screen capture Web Phone Agent"
 
         manager.createNotificationChannel(
             channel
         )
     }
 
-
-
-
-
+    // =========================
+    // NOTIFICATION
+    // =========================
 
     private fun buildNotification(): Notification {
-
 
         val openIntent =
             Intent(
@@ -527,17 +742,15 @@ class ScreenCaptureService : Service() {
                 MainActivity::class.java
             )
 
-
-
         val flags =
             PendingIntent.FLAG_UPDATE_CURRENT or
-                    if (Build.VERSION.SDK_INT >= 23)
-                        PendingIntent.FLAG_IMMUTABLE
-                    else
-                        0
-
-
-
+                if (
+                    Build.VERSION.SDK_INT >= 23
+                ) {
+                    PendingIntent.FLAG_IMMUTABLE
+                } else {
+                    0
+                }
 
         val pendingIntent =
             PendingIntent.getActivity(
@@ -547,24 +760,22 @@ class ScreenCaptureService : Service() {
                 flags
             )
 
-
-
-
         val builder =
-            if (Build.VERSION.SDK_INT >= 26)
+            if (
+                Build.VERSION.SDK_INT >= 26
+            ) {
 
                 Notification.Builder(
                     this,
                     CHANNEL_ID
                 )
 
-            else
+            } else {
 
-                Notification.Builder(this)
-
-
-
-
+                Notification.Builder(
+                    this
+                )
+            }
 
         return builder
             .setSmallIcon(
@@ -576,51 +787,50 @@ class ScreenCaptureService : Service() {
             .setContentText(
                 "Screen capture aktif"
             )
-            .setOngoing(true)
+            .setOngoing(
+                true
+            )
             .setContentIntent(
                 pendingIntent
             )
             .build()
-
     }
 
-
-
-
-
-
+    // =========================
+    // STOP FOREGROUND
+    // =========================
 
     private fun stopForegroundCompat() {
 
-
-        if (Build.VERSION.SDK_INT >= 24) {
-
+        if (
+            Build.VERSION.SDK_INT >= 24
+        ) {
 
             stopForeground(
                 STOP_FOREGROUND_REMOVE
             )
 
-
         } else {
 
-
             @Suppress("DEPRECATION")
-            stopForeground(true)
-
+            stopForeground(
+                true
+            )
         }
     }
 
-
-
-
-
+    // =========================
+    // DESTROY
+    // =========================
 
     override fun onDestroy() {
 
+        Log.d(
+            TAG,
+            "ScreenCaptureService dihancurkan"
+        )
 
         cleanupCapture()
-
-
 
         prefs.edit()
             .putBoolean(
@@ -629,82 +839,16 @@ class ScreenCaptureService : Service() {
             )
             .apply()
 
-
-
         super.onDestroy()
     }
 
-
-
-
+    // =========================
+    // NOT BOUND SERVICE
+    // =========================
 
     override fun onBind(
         intent: Intent?
-    ): IBinder? = null
-
-
-
-
-
-
-    companion object {
-
-
-        const val PREFS_NAME =
-            "web_phone_agent"
-
-
-
-        const val KEY_ACTIVE =
-            "screen_capture_active"
-
-
-
-        const val KEY_WIDTH =
-            "screen_capture_width"
-
-
-
-        const val KEY_HEIGHT =
-            "screen_capture_height"
-
-
-
-        const val KEY_LAST_FRAME_AT =
-            "screen_capture_last_frame_at"
-
-
-
-
-        const val ACTION_START =
-            "com.wpconvert.phoneagent.START_CAPTURE"
-
-
-
-        const val ACTION_STOP =
-            "com.wpconvert.phoneagent.STOP_CAPTURE"
-
-
-
-
-        const val EXTRA_RESULT_CODE =
-            "result_code"
-
-
-
-        const val EXTRA_RESULT_DATA =
-            "result_data"
-
-
-
-
-        private const val CHANNEL_ID =
-            "web_phone_agent_capture"
-
-
-
-
-        private const val NOTIFICATION_ID =
-            1001
+    ): IBinder? {
+        return null
     }
 }
