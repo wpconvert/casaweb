@@ -2,10 +2,8 @@ package com.wpconvert.phoneagent
 
 import android.content.Context
 import android.content.Intent
+import android.media.projection.MediaProjection
 import android.util.Log
-import org.webrtc.Camera2Enumerator
-import org.webrtc.CameraVideoCapturer
-import org.webrtc.MediaConstraints
 import org.webrtc.MediaStream
 import org.webrtc.PeerConnection
 import org.webrtc.PeerConnectionFactory
@@ -22,7 +20,6 @@ class RealtimeManager(
     companion object {
         private const val TAG = "RealtimeManager"
     }
-
 
     private var peerConnectionFactory:
         PeerConnectionFactory? = null
@@ -56,13 +53,11 @@ class RealtimeManager(
             "Initializing WebRTC..."
         )
 
-
         PeerConnectionFactory.initialize(
             PeerConnectionFactory.InitializationOptions
                 .builder(context)
                 .createInitializationOptions()
         )
-
 
         val encoderFactory =
             org.webrtc.DefaultVideoEncoderFactory(
@@ -71,12 +66,10 @@ class RealtimeManager(
                 true
             )
 
-
         val decoderFactory =
             org.webrtc.DefaultVideoDecoderFactory(
                 null
             )
-
 
         peerConnectionFactory =
             PeerConnectionFactory
@@ -89,7 +82,6 @@ class RealtimeManager(
                 )
                 .createPeerConnectionFactory()
 
-
         Log.d(
             TAG,
             "WebRTC initialized"
@@ -99,7 +91,7 @@ class RealtimeManager(
 
     /*
     ==================================================
-    START ANDROID SCREEN CAPTURE
+    START SCREEN CAPTURE
     ==================================================
     */
 
@@ -116,17 +108,13 @@ class RealtimeManager(
             "Starting WebRTC screen capture"
         )
 
-
         if (
             peerConnectionFactory == null
         ) {
-
             initialize()
         }
 
-
         stopScreenCapture()
-
 
         val factory =
             peerConnectionFactory
@@ -137,16 +125,18 @@ class RealtimeManager(
 
         /*
         ==============================================
-        SURFACE TEXTURE HELPER
+        EGL
         ==============================================
         */
+
+        val eglBase =
+            org.webrtc.EglBase.create()
+
 
         surfaceTextureHelper =
             SurfaceTextureHelper.create(
                 "WebPhoneAgent-WebRTC",
-                org.webrtc.EglBase
-                    .create()
-                    .eglBaseContext
+                eglBase.eglBaseContext
             )
 
 
@@ -171,8 +161,7 @@ class RealtimeManager(
         screenCapturer =
             ScreenCapturerAndroid(
                 permissionData,
-                object :
-                    org.webrtc.MediaProjection.Callback() {
+                object : MediaProjection.Callback() {
 
                     override fun onStop() {
 
@@ -180,7 +169,6 @@ class RealtimeManager(
                             TAG,
                             "MediaProjection stopped"
                         )
-
                     }
                 }
             )
@@ -214,7 +202,7 @@ class RealtimeManager(
 
         /*
         ==============================================
-        CREATE VIDEO TRACK
+        VIDEO TRACK
         ==============================================
         */
 
@@ -223,7 +211,6 @@ class RealtimeManager(
                 "screen-track",
                 videoSource
             )
-
 
         videoTrack?.setEnabled(
             true
@@ -234,7 +221,6 @@ class RealtimeManager(
             TAG,
             "Screen VideoTrack created"
         )
-
 
         Log.d(
             TAG,
@@ -292,8 +278,7 @@ class RealtimeManager(
         peerConnection =
             factory.createPeerConnection(
                 rtcConfig,
-                object :
-                    PeerConnection.Observer {
+                object : PeerConnection.Observer {
 
                     override fun onSignalingChange(
                         state:
@@ -345,7 +330,7 @@ class RealtimeManager(
 
                     override fun onIceCandidate(
                         candidate:
-                            PeerConnection.IceCandidate?
+                            PeerConnection.IceCandidate
                     ) {
 
                         Log.d(
@@ -357,26 +342,26 @@ class RealtimeManager(
 
                     override fun onIceCandidatesRemoved(
                         candidates:
-                            Array<out PeerConnection.IceCandidate>?
+                            Array<out PeerConnection.IceCandidate>
                     ) {
                     }
 
 
                     override fun onAddStream(
-                        stream: MediaStream?
+                        stream: MediaStream
                     ) {
                     }
 
 
                     override fun onRemoveStream(
-                        stream: MediaStream?
+                        stream: MediaStream
                     ) {
                     }
 
 
                     override fun onDataChannel(
                         dataChannel:
-                            org.webrtc.DataChannel?
+                            org.webrtc.DataChannel
                     ) {
                     }
 
@@ -392,9 +377,9 @@ class RealtimeManager(
 
                     override fun onAddTrack(
                         receiver:
-                            org.webrtc.RtpReceiver?,
+                            org.webrtc.RtpReceiver,
                         mediaStreams:
-                            Array<out MediaStream>?
+                            Array<out MediaStream>
                     ) {
                     }
 
@@ -407,21 +392,14 @@ class RealtimeManager(
 
                     override fun onStandardizedIceConnectionChange(
                         newState:
-                            PeerConnection.IceConnectionState?
+                            PeerConnection.IceConnectionState
                     ) {
                     }
 
 
                     override fun onTrack(
                         transceiver:
-                            org.webrtc.RtpTransceiver?
-                    ) {
-                    }
-
-
-                    override fun onSelectedCandidatePairChanged(
-                        event:
-                            PeerConnection.CandidatePairChangeEvent?
+                            org.webrtc.RtpTransceiver
                     ) {
                     }
                 }
@@ -443,22 +421,20 @@ class RealtimeManager(
 
         /*
         ==============================================
-        ADD SCREEN TRACK
+        ADD VIDEO TRACK
         ==============================================
         */
 
         videoTrack?.let { track ->
 
-            peerConnection?.addTransceiver(
+            peerConnection?.addTrack(
                 track,
-                PeerConnection.RtpTransceiver.RtpTransceiverInit(
-                    PeerConnection.RtpTransceiver.RtpTransceiverDirection.SEND_ONLY
-                )
+                listOf("screen-stream")
             )
 
             Log.d(
                 TAG,
-                "Screen track added to PeerConnection"
+                "Screen track added"
             )
         }
 
@@ -527,17 +503,13 @@ class RealtimeManager(
             "Closing WebRTC"
         )
 
-
         stopScreenCapture()
-
 
         peerConnection?.close()
         peerConnection = null
 
-
         peerConnectionFactory?.dispose()
         peerConnectionFactory = null
-
 
         Log.d(
             TAG,
