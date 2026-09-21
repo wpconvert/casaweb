@@ -31,9 +31,9 @@ class RealtimeManager(
             "https://web-phone-oneforall.danip4848.workers.dev"
     }
 
-    // =========================
+    // =====================================================
     // WEBRTC
-    // =========================
+    // =====================================================
 
     private var peerConnectionFactory:
         PeerConnectionFactory? = null
@@ -53,9 +53,9 @@ class RealtimeManager(
     private var screenCapturer:
         ScreenCapturerAndroid? = null
 
-    // =========================
+    // =====================================================
     // STATE
-    // =========================
+    // =====================================================
 
     private var initialized =
         false
@@ -66,9 +66,9 @@ class RealtimeManager(
     private var currentSessionId:
         String? = null
 
-    // =========================
+    // =====================================================
     // INITIALIZE WEBRTC
-    // =========================
+    // =====================================================
 
     fun initialize() {
 
@@ -157,27 +157,15 @@ class RealtimeManager(
         }
     }
 
-    // =========================
+    // =====================================================
     // START SCREEN CAPTURE
-    // =========================
+    // =====================================================
 
     /*
-     * PENTING:
-     *
-     * Fungsi ini TIDAK boleh dipanggil
-     * langsung dari MainActivity.
-     *
      * Fungsi ini dipanggil oleh
-     * ScreenCaptureService setelah:
-     *
-     * startForeground(
-     *     ...,
-     *     FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION
-     * )
-     *
-     * Dengan begitu Android sudah mengetahui
-     * bahwa aplikasi sedang menjalankan
-     * foreground service untuk MediaProjection.
+     * ScreenCaptureService setelah
+     * foreground service MediaProjection
+     * sudah aktif.
      */
 
     fun startScreenCapture(
@@ -220,12 +208,16 @@ class RealtimeManager(
                 "Menyiapkan WebRTC screen capture"
             )
 
-            // =========================
-            // EGL / TEXTURE HELPER
-            // =========================
+            // =================================================
+            // EGL
+            // =================================================
 
             val eglBase =
                 org.webrtc.EglBase.create()
+
+            // =================================================
+            // SURFACE TEXTURE HELPER
+            // =================================================
 
             surfaceTextureHelper =
                 SurfaceTextureHelper.create(
@@ -233,18 +225,18 @@ class RealtimeManager(
                     eglBase.eglBaseContext
                 )
 
-            // =========================
+            // =================================================
             // VIDEO SOURCE
-            // =========================
+            // =================================================
 
             videoSource =
                 factory.createVideoSource(
                     false
                 )
 
-            // =========================
+            // =================================================
             // SCREEN CAPTURER
-            // =========================
+            // =================================================
 
             screenCapturer =
                 ScreenCapturerAndroid(
@@ -288,9 +280,9 @@ class RealtimeManager(
                 return
             }
 
-            // =========================
+            // =================================================
             // INITIALIZE CAPTURER
-            // =========================
+            // =================================================
 
             capturer.initialize(
                 helper,
@@ -298,16 +290,14 @@ class RealtimeManager(
                 source.capturerObserver
             )
 
-            // =========================
+            // =================================================
             // START CAPTURE
-            // =========================
+            // =================================================
 
-            /*
-             * Resolusi target.
-             *
-             * WebRTC akan menangani scaling
-             * sesuai kemampuan device.
-             */
+            Log.d(
+                TAG,
+                "Memulai capture 720x1600 @ 30 FPS"
+            )
 
             capturer.startCapture(
                 720,
@@ -315,9 +305,9 @@ class RealtimeManager(
                 30
             )
 
-            // =========================
+            // =================================================
             // VIDEO TRACK
-            // =========================
+            // =================================================
 
             videoTrack =
                 factory.createVideoTrack(
@@ -358,9 +348,9 @@ class RealtimeManager(
         }
     }
 
-    // =========================
+    // =====================================================
     // PEER CONNECTION
-    // =========================
+    // =====================================================
 
     fun createPeerConnection() {
 
@@ -394,6 +384,10 @@ class RealtimeManager(
 
         try {
 
+            // =================================================
+            // STUN
+            // =================================================
+
             val iceServers =
                 listOf(
                     PeerConnection.IceServer
@@ -411,6 +405,10 @@ class RealtimeManager(
             configuration.sdpSemantics =
                 PeerConnection.SdpSemantics
                     .UNIFIED_PLAN
+
+            // =================================================
+            // PEER CONNECTION
+            // =================================================
 
             peerConnection =
                 factory.createPeerConnection(
@@ -599,9 +597,9 @@ class RealtimeManager(
                 "PeerConnection berhasil dibuat"
             )
 
-            // =========================
+            // =================================================
             // ADD SCREEN TRACK
-            // =========================
+            // =================================================
 
             videoTrack?.let { track ->
 
@@ -628,9 +626,9 @@ class RealtimeManager(
         }
     }
 
-    // =========================
+    // =====================================================
     // CREATE OFFER
-    // =========================
+    // =====================================================
 
     fun createOffer(
         callback:
@@ -758,9 +756,174 @@ class RealtimeManager(
         )
     }
 
-    // =========================
+    // =====================================================
+    // CREATE CLOUDFLARE SESSION
+    // =====================================================
+
+    fun createCloudflareSession(
+        callback:
+            (success: Boolean,
+             sessionId: String?,
+             error: String?) -> Unit
+    ) {
+
+        Log.d(
+            TAG,
+            "Meminta Cloudflare session baru"
+        )
+
+        thread {
+
+            try {
+
+                val url =
+                    URL(
+                        "$WORKER_URL/api/session"
+                    )
+
+                val connectionHttp =
+                    url.openConnection()
+                        as HttpURLConnection
+
+                connectionHttp.requestMethod =
+                    "POST"
+
+                connectionHttp.setRequestProperty(
+                    "Accept",
+                    "application/json"
+                )
+
+                connectionHttp.connectTimeout =
+                    15000
+
+                connectionHttp.readTimeout =
+                    30000
+
+                connectionHttp.doOutput =
+                    true
+
+                connectionHttp.outputStream.use {
+                    it.write(
+                        "{}".toByteArray(
+                            Charsets.UTF_8
+                        )
+                    )
+                }
+
+                val responseCode =
+                    connectionHttp.responseCode
+
+                val responseText =
+                    if (
+                        responseCode in 200..299
+                    ) {
+
+                        connectionHttp
+                            .inputStream
+                            .bufferedReader()
+                            .use {
+                                it.readText()
+                            }
+
+                    } else {
+
+                        connectionHttp
+                            .errorStream
+                            ?.bufferedReader()
+                            ?.use {
+                                it.readText()
+                            }
+                            ?: "HTTP $responseCode"
+                    }
+
+                Log.d(
+                    TAG,
+                    "Session response code: $responseCode"
+                )
+
+                Log.d(
+                    TAG,
+                    "Session response: $responseText"
+                )
+
+                if (
+                    responseCode !in 200..299
+                ) {
+
+                    callback(
+                        false,
+                        null,
+                        responseText
+                    )
+
+                    connectionHttp.disconnect()
+
+                    return@thread
+                }
+
+                val json =
+                    JSONObject(
+                        responseText
+                    )
+
+                val sessionId =
+                    json.optString(
+                        "sessionId",
+                        ""
+                    )
+
+                if (
+                    sessionId.isEmpty()
+                ) {
+
+                    callback(
+                        false,
+                        null,
+                        "Cloudflare tidak mengembalikan sessionId: $responseText"
+                    )
+
+                    connectionHttp.disconnect()
+
+                    return@thread
+                }
+
+                currentSessionId =
+                    sessionId
+
+                Log.d(
+                    TAG,
+                    "Cloudflare session berhasil: $sessionId"
+                )
+
+                callback(
+                    true,
+                    sessionId,
+                    null
+                )
+
+                connectionHttp.disconnect()
+
+            } catch (e: Exception) {
+
+                Log.e(
+                    TAG,
+                    "Gagal membuat Cloudflare session",
+                    e
+                )
+
+                callback(
+                    false,
+                    null,
+                    e.message
+                        ?: "Unknown error"
+                )
+            }
+        }
+    }
+
+    // =====================================================
     // PUBLISH CLOUDFLARE
-    // =========================
+    // =====================================================
 
     fun publishToCloudflare(
         sessionId: String,
@@ -862,11 +1025,31 @@ class RealtimeManager(
                                 "sdp",
                                 sdp
                             )
+
+                            put(
+                                "mid",
+                                "0"
+                            )
+
+                            put(
+                                "trackName",
+                                "screen-$deviceId"
+                            )
                         }
 
                     Log.d(
                         TAG,
                         "Mengirim SDP ke Worker"
+                    )
+
+                    Log.d(
+                        TAG,
+                        "Device ID: $deviceId"
+                    )
+
+                    Log.d(
+                        TAG,
+                        "Session ID: $sessionId"
                     )
 
                     connectionHttp.outputStream.use {
@@ -907,7 +1090,12 @@ class RealtimeManager(
 
                     Log.d(
                         TAG,
-                        "Cloudflare response: $responseCode"
+                        "Cloudflare response code: $responseCode"
+                    )
+
+                    Log.d(
+                        TAG,
+                        "Cloudflare response: $responseText"
                     )
 
                     if (
@@ -930,8 +1118,62 @@ class RealtimeManager(
                             responseText
                         )
 
+                    // =================================================
+                    // WORKER RESPONSE
+                    //
+                    // {
+                    //   "ok": true,
+                    //   "cloudflare": {
+                    //      "sessionDescription": {
+                    //          "type": "answer",
+                    //          "sdp": "..."
+                    //      }
+                    //   }
+                    // }
+                    // =================================================
+
+                    val cloudflare =
+                        json.optJSONObject(
+                            "cloudflare"
+                        )
+
+                    if (
+                        cloudflare == null
+                    ) {
+
+                        callback(
+                            false,
+                            null,
+                            "Response Worker tidak memiliki object cloudflare: $responseText"
+                        )
+
+                        connectionHttp.disconnect()
+
+                        return@thread
+                    }
+
+                    val sessionDescription =
+                        cloudflare.optJSONObject(
+                            "sessionDescription"
+                        )
+
+                    if (
+                        sessionDescription == null
+                    ) {
+
+                        callback(
+                            false,
+                            null,
+                            "Cloudflare tidak mengembalikan sessionDescription: $responseText"
+                        )
+
+                        connectionHttp.disconnect()
+
+                        return@thread
+                    }
+
                     val answerSdp =
-                        json.optString(
+                        sessionDescription.optString(
                             "sdp",
                             ""
                         )
@@ -951,11 +1193,20 @@ class RealtimeManager(
                         return@thread
                     }
 
+                    Log.d(
+                        TAG,
+                        "SDP answer Cloudflare berhasil ditemukan"
+                    )
+
                     val answer =
                         SessionDescription(
                             SessionDescription.Type.ANSWER,
                             answerSdp
                         )
+
+                    // =================================================
+                    // SET REMOTE DESCRIPTION
+                    // =================================================
 
                     connection.setRemoteDescription(
                         object :
@@ -985,6 +1236,11 @@ class RealtimeManager(
                                 error: String
                             ) {
 
+                                Log.e(
+                                    TAG,
+                                    "onCreateFailure: $error"
+                                )
+
                                 callback(
                                     false,
                                     null,
@@ -995,6 +1251,11 @@ class RealtimeManager(
                             override fun onSetFailure(
                                 error: String
                             ) {
+
+                                Log.e(
+                                    TAG,
+                                    "onSetFailure: $error"
+                                )
 
                                 callback(
                                     false,
@@ -1027,9 +1288,9 @@ class RealtimeManager(
         }
     }
 
-    // =========================
+    // =====================================================
     // SET REMOTE ANSWER
-    // =========================
+    // =====================================================
 
     fun setRemoteAnswer(
         answer: SessionDescription,
@@ -1094,9 +1355,9 @@ class RealtimeManager(
         )
     }
 
-    // =========================
+    // =====================================================
     // ICE
-    // =========================
+    // =====================================================
 
     fun addIceCandidate(
         candidate: IceCandidate
@@ -1125,9 +1386,9 @@ class RealtimeManager(
         )
     }
 
-    // =========================
+    // =====================================================
     // GET VIDEO TRACK
-    // =========================
+    // =====================================================
 
     fun getVideoTrack():
         VideoTrack? {
@@ -1135,9 +1396,9 @@ class RealtimeManager(
         return videoTrack
     }
 
-    // =========================
+    // =====================================================
     // CAPTURE STATUS
-    // =========================
+    // =====================================================
 
     fun isCapturing():
         Boolean {
@@ -1145,9 +1406,9 @@ class RealtimeManager(
         return capturing
     }
 
-    // =========================
+    // =====================================================
     // STOP SCREEN CAPTURE
-    // =========================
+    // =====================================================
 
     fun stopScreenCapture() {
 
@@ -1224,9 +1485,9 @@ class RealtimeManager(
         )
     }
 
-    // =========================
+    // =====================================================
     // DISPOSE
-    // =========================
+    // =====================================================
 
     fun dispose() {
 
