@@ -463,28 +463,47 @@
 <body>
 
     <aside class="sidebar">
+
         <div class="logo">
             Remote<span>Phone</span>
         </div>
 
-        <div class="menu-title">Menu</div>
+        <div class="menu-title">
+            Menu
+        </div>
 
         <ul class="menu">
+
             <li>
-                <a href="#" class="active">Dashboard</a>
+                <a href="#" class="active">
+                    Dashboard
+                </a>
             </li>
+
             <li>
-                <a href="#">Phones</a>
+                <a href="#">
+                    Phones
+                </a>
             </li>
+
             <li>
-                <a href="#">Devices</a>
+                <a href="#">
+                    Devices
+                </a>
             </li>
+
             <li>
-                <a href="#">Files</a>
+                <a href="#">
+                    Files
+                </a>
             </li>
+
             <li>
-                <a href="#">Settings</a>
+                <a href="#">
+                    Settings
+                </a>
             </li>
+
         </ul>
 
         <div class="logout">
@@ -492,24 +511,38 @@
                 ↪ Logout
             </button>
         </div>
+
     </aside>
 
 
     <main class="main">
 
         <header class="topbar">
+
             <div class="page-title">
-                <h1 id="pageTitle">My Computers</h1>
+
+                <h1 id="pageTitle">
+                    My Computers
+                </h1>
+
                 <p id="pageDescription">
                     Manage computers and connected Android devices.
                 </p>
-                <p style="margin-top:6px;color:#4ade80;font-size:11px;">CONNECTED • Cloudflare</p>
+
+                <p style="margin-top:6px;color:#4ade80;font-size:11px;">
+                    CONNECTED • Cloudflare
+                </p>
+
             </div>
 
             <div class="user">
                 Admin
-                <div class="avatar">A</div>
+
+                <div class="avatar">
+                    A
+                </div>
             </div>
+
         </header>
 
 
@@ -518,85 +551,173 @@
         <section id="dashboardPage">
 
             <div class="stats">
-                <div class="stat-card">
-                    <div class="stat-label">Phones</div>
-                    <div class="stat-number">6</div>
-                </div>
 
                 <div class="stat-card">
-                    <div class="stat-label">Online Phones</div>
-                    <div class="stat-number">5</div>
+
+                    <div class="stat-label">
+                        Phones
+                    </div>
+
+                    <div class="stat-number">
+                        0
+                    </div>
+
                 </div>
 
+
                 <div class="stat-card">
-                    <div class="stat-label">Total Phones</div>
-                    <div class="stat-number">18</div>
+
+                    <div class="stat-label">
+                        Online Phones
+                    </div>
+
+                    <div class="stat-number">
+                        0
+                    </div>
+
                 </div>
+
+
+                <div class="stat-card">
+
+                    <div class="stat-label">
+                        Total Phones
+                    </div>
+
+                    <div class="stat-number">
+                        0
+                    </div>
+
+                </div>
+
             </div>
+
 
             <div class="section-header">
-                <h2>My Phones</h2>
-                <span>6 computers</span>
+
+                <h2>
+                    My Phones
+                </h2>
+
+                <span>
+                    0 phones
+                </span>
+
             </div>
 
-            <div class="computer-grid" id="computerGrid"></div>
+
+            <div
+                class="computer-grid"
+                id="computerGrid"
+            ></div>
 
         </section>
 
 
         <!-- Devices -->
 
-        <section id="devicePage" class="device-page">
+        <section
+            id="devicePage"
+            class="device-page"
+        >
 
-            <button class="back-button" onclick="showComputers()">
+            <button
+                class="back-button"
+                onclick="showComputers()"
+            >
                 ← Back to Phones
             </button>
 
             <div class="section-header">
-                <h2 id="computerName">Android Device</h2>
-                <span id="computerId">DEVICE-ID</span>
+
+                <h2 id="computerName">
+                    Android Device
+                </h2>
+
+                <span id="computerId">
+                    DEVICE-ID
+                </span>
+
             </div>
 
-            <div class="device-grid" id="deviceGrid"></div>
+            <div
+                class="device-grid"
+                id="deviceGrid"
+            ></div>
 
         </section>
 
 
         <!-- Viewer -->
 
-        <section id="viewerPage" class="viewer-page">
+        <section
+            id="viewerPage"
+            class="viewer-page"
+        >
 
-            <button class="back-button" onclick="showDevices()">
+            <button
+                class="back-button"
+                onclick="showDevices()"
+            >
                 ← Back to Devices
             </button>
 
             <div class="viewer">
 
                 <div class="viewer-header">
+
                     <div>
-                        <div class="viewer-name" id="viewerName">
+
+                        <div
+                            class="viewer-name"
+                            id="viewerName"
+                        >
                             Android 01
                         </div>
 
                         <div class="viewer-status">
                             ● Connected
                         </div>
+
                     </div>
+
                 </div>
+
 
                 <div class="screen-area">
+
                     <div class="phone-screen">
+
                         Waiting for<br>
                         device stream...
+
                     </div>
+
                 </div>
 
+
                 <div class="controls">
-                    <button class="control-button">◀</button>
-                    <button class="control-button">●</button>
-                    <button class="control-button">▣</button>
-                    <button class="control-button">📷</button>
-                    <button class="control-button">⛶</button>
+
+                    <button class="control-button">
+                        ◀
+                    </button>
+
+                    <button class="control-button">
+                        ●
+                    </button>
+
+                    <button class="control-button">
+                        ▣
+                    </button>
+
+                    <button class="control-button">
+                        📷
+                    </button>
+
+                    <button class="control-button">
+                        ⛶
+                    </button>
+
                 </div>
 
             </div>
@@ -607,236 +728,858 @@
 
 
     <script>
-        const API_URL = "https://web-phone-oneforall.danip4848.workers.dev";
+
+        const API_URL =
+            "https://web-phone-oneforall.danip4848.workers.dev";
+
 
         let devices = [];
+
         let selectedDevice = null;
+
         let refreshTimer = null;
 
-        const dashboardPage = document.getElementById("dashboardPage");
-        const devicePage = document.getElementById("devicePage");
-        const viewerPage = document.getElementById("viewerPage");
+
+        const dashboardPage =
+            document.getElementById(
+                "dashboardPage"
+            );
+
+        const devicePage =
+            document.getElementById(
+                "devicePage"
+            );
+
+        const viewerPage =
+            document.getElementById(
+                "viewerPage"
+            );
+
+
+        // =====================================================
+        // ESCAPE HTML
+        // =====================================================
 
         function escapeHtml(value) {
+
             return String(value ?? "")
-                .replace(/&/g, "&amp;")
-                .replace(/</g, "&lt;")
-                .replace(/>/g, "&gt;")
-                .replace(/"/g, "&quot;")
-                .replace(/'/g, "&#039;");
+                .replace(
+                    /&/g,
+                    "&amp;"
+                )
+                .replace(
+                    /</g,
+                    "&lt;"
+                )
+                .replace(
+                    />/g,
+                    "&gt;"
+                )
+                .replace(
+                    /"/g,
+                    "&quot;"
+                )
+                .replace(
+                    /'/g,
+                    "&#039;"
+                );
         }
 
-        async function loadDevices() {
+
+        // =====================================================
+        // CHECK STREAM
+        // =====================================================
+
+        async function hasStream(
+            deviceId
+        ) {
+
             try {
-                const response = await fetch(`${API_URL}/api/devices`, {
-                    method: "GET",
-                    cache: "no-store"
-                });
+
+                const response =
+                    await fetch(
+                        `${API_URL}/stream?deviceId=${encodeURIComponent(
+                            deviceId
+                        )}`,
+                        {
+                            method: "GET",
+                            cache: "no-store"
+                        }
+                    );
+
 
                 if (!response.ok) {
-                    throw new Error(`HTTP ${response.status}`);
+
+                    return false;
+
                 }
 
-                const data = await response.json();
-                devices = Array.isArray(data.devices) ? data.devices : [];
+
+                const data =
+                    await response.json();
+
+
+                return (
+                    data.ok === true &&
+                    data.stream &&
+                    data.stream.sessionId &&
+                    data.stream.trackName
+                );
+
+            } catch (error) {
+
+                console.error(
+                    "Stream check error:",
+                    deviceId,
+                    error
+                );
+
+                return false;
+            }
+        }
+
+
+        // =====================================================
+        // LOAD DEVICES
+        // =====================================================
+
+        async function loadDevices() {
+
+            try {
+
+                const response =
+                    await fetch(
+                        `${API_URL}/api/devices`,
+                        {
+                            method: "GET",
+                            cache: "no-store"
+                        }
+                    );
+
+
+                if (!response.ok) {
+
+                    throw new Error(
+                        `HTTP ${response.status}`
+                    );
+
+                }
+
+
+                const data =
+                    await response.json();
+
+
+                const allDevices =
+                    Array.isArray(
+                        data.devices
+                    )
+                        ? data.devices
+                        : [];
+
+
+                // =================================================
+                // HANYA ONLINE
+                // =================================================
+
+                const onlineDevices =
+                    allDevices.filter(
+                        device =>
+                            device.online === true
+                    );
+
+
+                // =================================================
+                // CEK STREAM SEMUA DEVICE ONLINE
+                // =================================================
+
+                const streamChecks =
+                    await Promise.all(
+                        onlineDevices.map(
+                            async device => {
+
+                                const registered =
+                                    await hasStream(
+                                        device.id
+                                    );
+
+
+                                return {
+                                    device,
+                                    registered
+                                };
+
+                            }
+                        )
+                    );
+
+
+                // =================================================
+                // HANYA DEVICE ONLINE + STREAM
+                // =================================================
+
+                devices =
+                    streamChecks
+                        .filter(
+                            item =>
+                                item.registered === true
+                        )
+                        .map(
+                            item =>
+                                item.device
+                        );
+
 
                 renderStats();
+
                 renderPhones();
 
+
+                // =================================================
+                // UPDATE DEVICE TERPILIH
+                // =================================================
+
                 if (selectedDevice) {
-                    const current = devices.find(d => d.id === selectedDevice.id);
+
+                    const current =
+                        devices.find(
+                            device =>
+                                device.id ===
+                                selectedDevice.id
+                        );
+
+
                     if (current) {
-                        selectedDevice = current;
-                        updateViewerStatus(current);
+
+                        selectedDevice =
+                            current;
+
+
+                        updateViewerStatus(
+                            current
+                        );
+
+                    } else {
+
+                        selectedDevice =
+                            null;
+
+                        showComputers();
+
                     }
+
                 }
 
-                console.log("Cloudflare devices:", devices);
+
+                console.log(
+                    "Registered online devices:",
+                    devices
+                );
+
+
             } catch (error) {
-                console.error("Cloudflare device API error:", error);
+
+                console.error(
+                    "Cloudflare device API error:",
+                    error
+                );
+
             }
         }
+
+
+        // =====================================================
+        // STATS
+        // =====================================================
 
         function renderStats() {
-            const online = devices.filter(d => d.online === true).length;
-            const statNumbers = document.querySelectorAll(".stat-number");
 
-            if (statNumbers[0]) statNumbers[0].textContent = devices.length;
-            if (statNumbers[1]) statNumbers[1].textContent = online;
-            if (statNumbers[2]) statNumbers[2].textContent = devices.length;
+            const online =
+                devices.filter(
+                    device =>
+                        device.online === true
+                ).length;
 
-            const label = document.querySelector(".section-header span");
-            if (label) {
-                label.textContent = `${devices.length} phone${devices.length === 1 ? "" : "s"}`;
+
+            const statNumbers =
+                document.querySelectorAll(
+                    ".stat-number"
+                );
+
+
+            if (statNumbers[0]) {
+
+                statNumbers[0].textContent =
+                    devices.length;
+
             }
+
+
+            if (statNumbers[1]) {
+
+                statNumbers[1].textContent =
+                    online;
+
+            }
+
+
+            if (statNumbers[2]) {
+
+                statNumbers[2].textContent =
+                    devices.length;
+
+            }
+
+
+            const label =
+                document.querySelector(
+                    ".section-header span"
+                );
+
+
+            if (label) {
+
+                label.textContent =
+                    `${devices.length} phone${
+                        devices.length === 1
+                            ? ""
+                            : "s"
+                    }`;
+
+            }
+
         }
+
+
+        // =====================================================
+        // RENDER PHONES
+        // =====================================================
 
         function renderPhones() {
-            const grid = document.getElementById("computerGrid");
+
+            const grid =
+                document.getElementById(
+                    "computerGrid"
+                );
+
 
             if (!devices.length) {
+
                 grid.innerHTML = `
+
                     <div class="computer-card">
+
                         <div class="computer-top">
-                            <div class="computer-icon">📱</div>
-                            <div class="status offline">
-                                <div class="status-dot"></div>
-                                Offline
+
+                            <div class="computer-icon">
+                                📱
                             </div>
+
+                            <div class="status offline">
+
+                                <div class="status-dot"></div>
+
+                                No registered phone
+
+                            </div>
+
                         </div>
-                        <div class="computer-name">No phones connected</div>
-                        <div class="computer-id">Waiting for Web Phone Agent...</div>
+
+
+                        <div class="computer-name">
+                            No phones connected
+                        </div>
+
+
+                        <div class="computer-id">
+                            Waiting for Web Phone Agent...
+                        </div>
+
+
                         <div class="computer-info">
-                            <span>Phones</span><span>0</span>
+
+                            <span>
+                                Registered Phones
+                            </span>
+
+                            <span>
+                                0
+                            </span>
+
                         </div>
+
                     </div>
+
                 `;
+
                 return;
             }
 
-            grid.innerHTML = devices.map(device => {
-                const name = device.name || device.model || "Android Device";
-                const online = device.online === true;
 
-                return `
-                    <div class="computer-card">
-                        <div class="computer-top">
-                            <div class="computer-icon">📱</div>
-                            <div class="status ${online ? "online" : "offline"}">
-                                <div class="status-dot"></div>
-                                ${online ? "Online" : "Offline"}
+            grid.innerHTML =
+                devices.map(
+                    device => {
+
+                        const name =
+                            device.name ||
+                            device.model ||
+                            "Android Device";
+
+
+                        return `
+
+                            <div class="computer-card">
+
+                                <div class="computer-top">
+
+                                    <div class="computer-icon">
+                                        📱
+                                    </div>
+
+
+                                    <div class="status online">
+
+                                        <div class="status-dot"></div>
+
+                                        Online
+
+                                    </div>
+
+                                </div>
+
+
+                                <div class="computer-name">
+
+                                    ${escapeHtml(
+                                        name
+                                    )}
+
+                                </div>
+
+
+                                <div class="computer-id">
+
+                                    ${escapeHtml(
+                                        device.model ||
+                                        "Android Device"
+                                    )}
+
+                                </div>
+
+
+                                <div class="computer-info">
+
+                                    <span>
+                                        Device ID
+                                    </span>
+
+                                    <span>
+
+                                        ${escapeHtml(
+                                            device.id
+                                        )}
+
+                                    </span>
+
+                                </div>
+
+
+                                <button
+                                    class="open-button"
+                                    onclick="openPhone('${escapeHtml(
+                                        device.id
+                                    )}')"
+                                >
+                                    Open Phone
+                                </button>
+
                             </div>
-                        </div>
-                        <div class="computer-name">${escapeHtml(name)}</div>
-                        <div class="computer-id">${escapeHtml(device.model || "Android Device")}</div>
-                        <div class="computer-info">
-                            <span>Device ID</span>
-                            <span>${escapeHtml(device.id)}</span>
-                        </div>
-                        <button class="open-button" onclick="openPhone('${escapeHtml(device.id)}')">
-                            Open Phone
-                        </button>
-                    </div>
-                `;
-            }).join("");
+
+                        `;
+
+                    }
+                ).join("");
+
         }
 
-        function openPhone(deviceId) {
-            const device = devices.find(d => d.id === deviceId);
-            if (!device) return;
 
-            selectedDevice = device;
+        // =====================================================
+        // OPEN PHONE
+        // =====================================================
 
-            dashboardPage.style.display = "none";
-            devicePage.style.display = "block";
-            viewerPage.style.display = "none";
+        function openPhone(
+            deviceId
+        ) {
 
-            document.getElementById("computerName").textContent =
-                device.name || device.model || "Android Device";
-            document.getElementById("computerId").textContent = device.id;
-            document.getElementById("pageTitle").textContent =
-                device.name || device.model || "Android Device";
-            document.getElementById("pageDescription").textContent =
+            const device =
+                devices.find(
+                    d =>
+                        d.id ===
+                        deviceId
+                );
+
+
+            if (!device) {
+
+                return;
+
+            }
+
+
+            selectedDevice =
+                device;
+
+
+            dashboardPage.style.display =
+                "none";
+
+            devicePage.style.display =
+                "block";
+
+            viewerPage.style.display =
+                "none";
+
+
+            document.getElementById(
+                "computerName"
+            ).textContent =
+                device.name ||
+                device.model ||
+                "Android Device";
+
+
+            document.getElementById(
+                "computerId"
+            ).textContent =
+                device.id;
+
+
+            document.getElementById(
+                "pageTitle"
+            ).textContent =
+                device.name ||
+                device.model ||
+                "Android Device";
+
+
+            document.getElementById(
+                "pageDescription"
+            ).textContent =
                 "Android device connected to Cloudflare.";
 
+
             renderSelectedDevice();
+
         }
+
+
+        // =====================================================
+        // SELECTED DEVICE
+        // =====================================================
 
         function renderSelectedDevice() {
-            const grid = document.getElementById("deviceGrid");
+
+            const grid =
+                document.getElementById(
+                    "deviceGrid"
+                );
+
+
             if (!selectedDevice) {
+
                 grid.innerHTML = "";
+
                 return;
+
             }
 
-            const name = selectedDevice.name || selectedDevice.model || "Android Device";
-            const online = selectedDevice.online === true;
+
+            const name =
+                selectedDevice.name ||
+                selectedDevice.model ||
+                "Android Device";
+
 
             grid.innerHTML = `
-                <div class="device-card" onclick="openViewer()">
-                    <div class="device-icon">📱</div>
-                    <div class="device-name">${escapeHtml(name)}</div>
-                    <div class="device-model">${escapeHtml(selectedDevice.model || "Android Device")}</div>
-                    <div class="status ${online ? "online" : "offline"}">
-                        <div class="status-dot"></div>
-                        ${online ? "Online" : "Offline"}
+
+                <div
+                    class="device-card"
+                    onclick="openViewer()"
+                >
+
+                    <div class="device-icon">
+                        📱
                     </div>
+
+
+                    <div class="device-name">
+
+                        ${escapeHtml(
+                            name
+                        )}
+
+                    </div>
+
+
+                    <div class="device-model">
+
+                        ${escapeHtml(
+                            selectedDevice.model ||
+                            "Android Device"
+                        )}
+
+                    </div>
+
+
+                    <div class="status online">
+
+                        <div class="status-dot"></div>
+
+                        Online
+
+                    </div>
+
                 </div>
+
             `;
+
         }
+
+
+        // =====================================================
+        // OPEN VIEWER
+        // =====================================================
 
         function openViewer() {
-            if (!selectedDevice) return;
 
-            dashboardPage.style.display = "none";
-            devicePage.style.display = "none";
-            viewerPage.style.display = "block";
+            if (!selectedDevice) {
 
-            const name = selectedDevice.name || selectedDevice.model || "Android Device";
-            document.getElementById("viewerName").textContent = name;
-            document.getElementById("pageTitle").textContent = name;
-            document.getElementById("pageDescription").textContent =
+                return;
+
+            }
+
+
+            dashboardPage.style.display =
+                "none";
+
+            devicePage.style.display =
+                "none";
+
+            viewerPage.style.display =
+                "block";
+
+
+            const name =
+                selectedDevice.name ||
+                selectedDevice.model ||
+                "Android Device";
+
+
+            document.getElementById(
+                "viewerName"
+            ).textContent =
+                name;
+
+
+            document.getElementById(
+                "pageTitle"
+            ).textContent =
+                name;
+
+
+            document.getElementById(
+                "pageDescription"
+            ).textContent =
                 `Device ID: ${selectedDevice.id}`;
 
-            updateViewerStatus(selectedDevice);
+
+            updateViewerStatus(
+                selectedDevice
+            );
+
         }
 
-        function updateViewerStatus(device) {
-            const status = document.querySelector(".viewer-status");
-            if (!status) return;
 
-            status.textContent = device.online === true
-                ? "● Connected"
-                : "● Offline";
+        // =====================================================
+        // VIEWER STATUS
+        // =====================================================
+
+        function updateViewerStatus(
+            device
+        ) {
+
+            const status =
+                document.querySelector(
+                    ".viewer-status"
+                );
+
+
+            if (!status) {
+
+                return;
+
+            }
+
+
+            status.textContent =
+                device.online === true
+                    ? "● Connected"
+                    : "● Offline";
+
         }
+
+
+        // =====================================================
+        // BACK TO PHONES
+        // =====================================================
 
         function showComputers() {
-            selectedDevice = null;
-            dashboardPage.style.display = "block";
-            devicePage.style.display = "none";
-            viewerPage.style.display = "none";
 
-            document.getElementById("pageTitle").textContent = "My Phones";
-            document.getElementById("pageDescription").textContent =
+            selectedDevice =
+                null;
+
+
+            dashboardPage.style.display =
+                "block";
+
+            devicePage.style.display =
+                "none";
+
+            viewerPage.style.display =
+                "none";
+
+
+            document.getElementById(
+                "pageTitle"
+            ).textContent =
+                "My Phones";
+
+
+            document.getElementById(
+                "pageDescription"
+            ).textContent =
                 "Manage connected Android phones.";
 
+
             loadDevices();
+
         }
+
+
+        // =====================================================
+        // BACK TO DEVICE
+        // =====================================================
 
         function showDevices() {
-            dashboardPage.style.display = "none";
-            devicePage.style.display = "block";
-            viewerPage.style.display = "none";
+
+            dashboardPage.style.display =
+                "none";
+
+            devicePage.style.display =
+                "block";
+
+            viewerPage.style.display =
+                "none";
+
+
             renderSelectedDevice();
+
         }
+
+
+        // =====================================================
+        // LOGOUT
+        // =====================================================
 
         function logout() {
+
             showComputers();
+
         }
 
-        document.querySelectorAll(".menu a").forEach(link => {
-            link.addEventListener("click", event => {
-                event.preventDefault();
 
-                document.querySelectorAll(".menu a").forEach(item => {
-                    item.classList.remove("active");
-                });
-                link.classList.add("active");
+        // =====================================================
+        // MENU
+        // =====================================================
 
-                if (link.textContent.trim().toLowerCase() === "dashboard") {
-                    showComputers();
+        document
+            .querySelectorAll(
+                ".menu a"
+            )
+            .forEach(
+                link => {
+
+                    link.addEventListener(
+                        "click",
+                        event => {
+
+                            event.preventDefault();
+
+
+                            document
+                                .querySelectorAll(
+                                    ".menu a"
+                                )
+                                .forEach(
+                                    item => {
+
+                                        item.classList.remove(
+                                            "active"
+                                        );
+
+                                    }
+                                );
+
+
+                            link.classList.add(
+                                "active"
+                            );
+
+
+                            if (
+                                link.textContent
+                                    .trim()
+                                    .toLowerCase() ===
+                                "dashboard"
+                            ) {
+
+                                showComputers();
+
+                            }
+
+                        }
+                    );
+
                 }
-            });
-        });
+            );
 
-        document.getElementById("pageTitle").textContent = "My Phones";
-        document.getElementById("pageDescription").textContent =
+
+        // =====================================================
+        // START
+        // =====================================================
+
+        document.getElementById(
+            "pageTitle"
+        ).textContent =
+            "My Phones";
+
+
+        document.getElementById(
+            "pageDescription"
+        ).textContent =
             "Manage connected Android phones.";
 
+
         loadDevices();
-        refreshTimer = setInterval(loadDevices, 5000);
+
+
+        refreshTimer =
+            setInterval(
+                loadDevices,
+                5000
+            );
+
     </script>
 
 </body>
 </html>
-```
