@@ -457,1129 +457,173 @@
                 grid-template-columns: 1fr;
             }
         }
+    
+        .page { display:none; }
+        .page.active { display:block; }
+        .toolbar { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+        .btn { border:1px solid #2a343f; border-radius:8px; background:#171e26; color:#d8dee5; padding:9px 13px; cursor:pointer; }
+        .btn:hover { background:#202a35; }
+        .btn.primary { background:#1d5b35; border-color:#2c7b48; color:#eaffef; }
+        .btn.danger { color:#fca5a5; }
+        .search-input { min-width:220px; padding:10px 12px; border:1px solid #29343f; border-radius:8px; background:#0d1218; color:#fff; outline:none; }
+        .search-input:focus { border-color:#465563; }
+        .folder-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:14px; }
+        .folder-card { padding:18px; border:1px solid #202833; border-radius:11px; background:#11161d; cursor:pointer; transition:.2s; }
+        .folder-card:hover { border-color:#394552; transform:translateY(-2px); }
+        .folder-icon { font-size:28px; margin-bottom:12px; }
+        .folder-name { font-size:14px; font-weight:700; }
+        .folder-meta { margin-top:5px; color:#687483; font-size:11px; }
+        .phone-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:15px; }
+        .phone-card { padding:18px; border:1px solid #202833; border-radius:10px; background:#11161d; }
+        .phone-top { display:flex; align-items:center; justify-content:space-between; margin-bottom:15px; }
+        .phone-icon { display:flex; align-items:center; justify-content:center; width:42px; height:42px; border-radius:9px; background:#1b232c; font-size:20px; }
+        .phone-name-row { display:flex; align-items:center; gap:5px; }
+        .phone-name-row .device-name { margin:0; }
+        .pencil { border:0; background:transparent; color:#7d8997; cursor:pointer; padding:2px 4px; }
+        .pencil:hover { color:#fff; }
+        .phone-actions { display:flex; gap:7px; margin-top:15px; padding-top:14px; border-top:1px solid #202833; }
+        .phone-actions .btn { flex:1; }
+        .tabs { display:flex; gap:6px; margin-bottom:16px; }
+        .tab { border:1px solid #202833; background:transparent; color:#7d8997; padding:9px 13px; border-radius:8px; cursor:pointer; }
+        .tab.active { background:#1c252f; color:#fff; }
+        .table-wrap { overflow:auto; border:1px solid #202833; border-radius:10px; }
+        .device-table { width:100%; border-collapse:collapse; min-width:700px; background:#11161d; }
+        .device-table th,.device-table td { padding:13px 14px; border-bottom:1px solid #202833; text-align:left; font-size:12px; }
+        .device-table th { color:#687483; font-weight:600; }
+        .device-table tr:last-child td { border-bottom:0; }
+        .file-toolbar { display:flex; align-items:center; gap:9px; flex-wrap:wrap; margin-bottom:14px; }
+        .file-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:12px; }
+        .file-card { padding:15px; border:1px solid #202833; border-radius:10px; background:#11161d; }
+        .file-card.clickable { cursor:pointer; }
+        .file-card.clickable:hover { border-color:#394552; }
+        .file-icon { font-size:25px; margin-bottom:9px; }
+        .file-name { font-size:12px; font-weight:700; word-break:break-word; }
+        .file-note { font-size:10px; color:#687483; margin-top:5px; }
+        .settings-list { display:grid; gap:12px; max-width:800px; }
+        .settings-row { display:flex; justify-content:space-between; align-items:center; gap:20px; padding:18px; border:1px solid #202833; border-radius:10px; background:#11161d; }
+        .settings-title { font-size:13px; font-weight:700; }
+        .settings-description { margin-top:5px; color:#687483; font-size:11px; line-height:1.5; }
+        .toggle { width:44px; height:24px; border:0; border-radius:20px; background:#303a45; position:relative; cursor:pointer; }
+        .toggle:after { content:''; position:absolute; width:16px; height:16px; top:4px; left:4px; border-radius:50%; background:#fff; transition:.2s; }
+        .toggle.active { background:#2f8a4e; }
+        .toggle.active:after { left:24px; }
+        .empty-state { padding:35px; border:1px dashed #29333e; border-radius:10px; text-align:center; color:#687483; background:#0e1319; }
+        .empty-state strong { display:block; color:#cbd2da; margin-bottom:6px; }
+        .modal-backdrop { position:fixed; inset:0; display:none; align-items:center; justify-content:center; padding:20px; background:rgba(0,0,0,.68); z-index:100; }
+        .modal-backdrop.show { display:flex; }
+        .modal { width:min(460px,100%); padding:20px; border:1px solid #2a343f; border-radius:12px; background:#121820; box-shadow:0 20px 60px rgba(0,0,0,.4); }
+        .modal h3 { font-size:17px; margin-bottom:6px; }
+        .modal p { color:#7d8997; font-size:12px; line-height:1.5; margin-bottom:18px; }
+        .field { margin-bottom:14px; }
+        .field label { display:block; margin-bottom:7px; color:#8d98a5; font-size:11px; }
+        .field input,.field select { width:100%; padding:11px 12px; border:1px solid #2a343f; border-radius:8px; background:#0d1218; color:#fff; outline:none; }
+        .modal-actions { display:flex; justify-content:flex-end; gap:8px; margin-top:18px; }
+        .toast { position:fixed; right:22px; bottom:22px; display:none; padding:11px 14px; border:1px solid #33404d; border-radius:9px; background:#18212a; color:#e8edf2; font-size:12px; z-index:120; }
+        .toast.show { display:block; }
+        .viewer-note { color:#687483; font-size:12px; margin-bottom:15px; }
+        @media (max-width:1100px) { .folder-grid,.file-grid { grid-template-columns:repeat(2,1fr); } .phone-grid { grid-template-columns:repeat(2,1fr); } }
+        @media (max-width:700px) { .folder-grid,.file-grid,.phone-grid { grid-template-columns:1fr; } .search-input { width:100%; min-width:0; } .settings-row { align-items:flex-start; } }
+
     </style>
 </head>
 
+
 <body>
-
-    <aside class="sidebar">
-
-        <div class="logo">
-            Remote<span>Phone</span>
-        </div>
-
-        <div class="menu-title">
-            Menu
-        </div>
-
-        <ul class="menu">
-
-            <li>
-                <a href="#" class="active">
-                    Dashboard
-                </a>
-            </li>
-
-            <li>
-                <a href="#">
-                    Phones
-                </a>
-            </li>
-
-            <li>
-                <a href="#">
-                    Devices
-                </a>
-            </li>
-
-            <li>
-                <a href="#">
-                    Files
-                </a>
-            </li>
-
-            <li>
-                <a href="#">
-                    Settings
-                </a>
-            </li>
-
-        </ul>
-
-        <div class="logout">
-            <button onclick="logout()">
-                ↪ Logout
-            </button>
-        </div>
-
-    </aside>
-
-
-    <main class="main">
-
-        <header class="topbar">
-
-            <div class="page-title">
-
-                <h1 id="pageTitle">
-                    My Computers
-                </h1>
-
-                <p id="pageDescription">
-                    Manage computers and connected Android devices.
-                </p>
-
-                <p style="margin-top:6px;color:#4ade80;font-size:11px;">
-                    CONNECTED • Cloudflare
-                </p>
-
-            </div>
-
-            <div class="user">
-                Admin
-
-                <div class="avatar">
-                    A
-                </div>
-            </div>
-
-        </header>
-
-
-        <!-- Dashboard -->
-
-        <section id="dashboardPage">
-
-            <div class="stats">
-
-                <div class="stat-card">
-
-                    <div class="stat-label">
-                        Phones
-                    </div>
-
-                    <div class="stat-number">
-                        0
-                    </div>
-
-                </div>
-
-
-                <div class="stat-card">
-
-                    <div class="stat-label">
-                        Online Phones
-                    </div>
-
-                    <div class="stat-number">
-                        0
-                    </div>
-
-                </div>
-
-
-                <div class="stat-card">
-
-                    <div class="stat-label">
-                        Total Phones
-                    </div>
-
-                    <div class="stat-number">
-                        0
-                    </div>
-
-                </div>
-
-            </div>
-
-
-            <div class="section-header">
-
-                <h2>
-                    My Phones
-                </h2>
-
-                <span>
-                    0 phones
-                </span>
-
-            </div>
-
-
-            <div
-                class="computer-grid"
-                id="computerGrid"
-            ></div>
-
-        </section>
-
-
-        <!-- Devices -->
-
-        <section
-            id="devicePage"
-            class="device-page"
-        >
-
-            <button
-                class="back-button"
-                onclick="showComputers()"
-            >
-                ← Back to Phones
-            </button>
-
-            <div class="section-header">
-
-                <h2 id="computerName">
-                    Android Device
-                </h2>
-
-                <span id="computerId">
-                    DEVICE-ID
-                </span>
-
-            </div>
-
-            <div
-                class="device-grid"
-                id="deviceGrid"
-            ></div>
-
-        </section>
-
-
-        <!-- Viewer -->
-
-        <section
-            id="viewerPage"
-            class="viewer-page"
-        >
-
-            <button
-                class="back-button"
-                onclick="showDevices()"
-            >
-                ← Back to Devices
-            </button>
-
-            <div class="viewer">
-
-                <div class="viewer-header">
-
-                    <div>
-
-                        <div
-                            class="viewer-name"
-                            id="viewerName"
-                        >
-                            Android 01
-                        </div>
-
-                        <div class="viewer-status">
-                            ● Connected
-                        </div>
-
-                    </div>
-
-                </div>
-
-
-                <div class="screen-area">
-
-                    <div class="phone-screen">
-
-                        Waiting for<br>
-                        device stream...
-
-                    </div>
-
-                </div>
-
-
-                <div class="controls">
-
-                    <button class="control-button">
-                        ◀
-                    </button>
-
-                    <button class="control-button">
-                        ●
-                    </button>
-
-                    <button class="control-button">
-                        ▣
-                    </button>
-
-                    <button class="control-button">
-                        📷
-                    </button>
-
-                    <button class="control-button">
-                        ⛶
-                    </button>
-
-                </div>
-
-            </div>
-
-        </section>
-
-    </main>
-
-
-    <script>
-
-        const API_URL =
-            "https://web-phone-oneforall.danip4848.workers.dev";
-
-
-        let devices = [];
-
-        let selectedDevice = null;
-
-        let refreshTimer = null;
-
-
-        const dashboardPage =
-            document.getElementById(
-                "dashboardPage"
-            );
-
-        const devicePage =
-            document.getElementById(
-                "devicePage"
-            );
-
-        const viewerPage =
-            document.getElementById(
-                "viewerPage"
-            );
-
-
-        // =====================================================
-        // ESCAPE HTML
-        // =====================================================
-
-        function escapeHtml(value) {
-
-            return String(value ?? "")
-                .replace(
-                    /&/g,
-                    "&amp;"
-                )
-                .replace(
-                    /</g,
-                    "&lt;"
-                )
-                .replace(
-                    />/g,
-                    "&gt;"
-                )
-                .replace(
-                    /"/g,
-                    "&quot;"
-                )
-                .replace(
-                    /'/g,
-                    "&#039;"
-                );
-        }
-
-
-        // =====================================================
-        // CHECK STREAM
-        // =====================================================
-
-        async function hasStream(
-            deviceId
-        ) {
-
-            try {
-
-                const response =
-                    await fetch(
-                        `${API_URL}/stream?deviceId=${encodeURIComponent(
-                            deviceId
-                        )}`,
-                        {
-                            method: "GET",
-                            cache: "no-store"
-                        }
-                    );
-
-
-                if (!response.ok) {
-
-                    return false;
-
-                }
-
-
-                const data =
-                    await response.json();
-
-
-                return (
-                    data.ok === true &&
-                    data.stream &&
-                    data.stream.sessionId &&
-                    data.stream.trackName
-                );
-
-            } catch (error) {
-
-                console.error(
-                    "Stream check error:",
-                    deviceId,
-                    error
-                );
-
-                return false;
-            }
-        }
-
-
-        // =====================================================
-        // LOAD DEVICES
-        // =====================================================
-
-        async function loadDevices() {
-
-            try {
-
-                const response =
-                    await fetch(
-                        `${API_URL}/api/devices`,
-                        {
-                            method: "GET",
-                            cache: "no-store"
-                        }
-                    );
-
-
-                if (!response.ok) {
-
-                    throw new Error(
-                        `HTTP ${response.status}`
-                    );
-
-                }
-
-
-                const data =
-                    await response.json();
-
-
-                const allDevices =
-                    Array.isArray(
-                        data.devices
-                    )
-                        ? data.devices
-                        : [];
-
-
-                // =================================================
-                // HANYA ONLINE
-                // =================================================
-
-                const onlineDevices =
-                    allDevices.filter(
-                        device =>
-                            device.online === true
-                    );
-
-
-                // =================================================
-                // CEK STREAM SEMUA DEVICE ONLINE
-                // =================================================
-
-                const streamChecks =
-                    await Promise.all(
-                        onlineDevices.map(
-                            async device => {
-
-                                const registered =
-                                    await hasStream(
-                                        device.id
-                                    );
-
-
-                                return {
-                                    device,
-                                    registered
-                                };
-
-                            }
-                        )
-                    );
-
-
-                // =================================================
-                // HANYA DEVICE ONLINE + STREAM
-                // =================================================
-
-                devices =
-                    streamChecks
-                        .filter(
-                            item =>
-                                item.registered === true
-                        )
-                        .map(
-                            item =>
-                                item.device
-                        );
-
-
-                renderStats();
-
-                renderPhones();
-
-
-                // =================================================
-                // UPDATE DEVICE TERPILIH
-                // =================================================
-
-                if (selectedDevice) {
-
-                    const current =
-                        devices.find(
-                            device =>
-                                device.id ===
-                                selectedDevice.id
-                        );
-
-
-                    if (current) {
-
-                        selectedDevice =
-                            current;
-
-
-                        updateViewerStatus(
-                            current
-                        );
-
-                    } else {
-
-                        selectedDevice =
-                            null;
-
-                        showComputers();
-
-                    }
-
-                }
-
-
-                console.log(
-                    "Registered online devices:",
-                    devices
-                );
-
-
-            } catch (error) {
-
-                console.error(
-                    "Cloudflare device API error:",
-                    error
-                );
-
-            }
-        }
-
-
-        // =====================================================
-        // STATS
-        // =====================================================
-
-        function renderStats() {
-
-            const online =
-                devices.filter(
-                    device =>
-                        device.online === true
-                ).length;
-
-
-            const statNumbers =
-                document.querySelectorAll(
-                    ".stat-number"
-                );
-
-
-            if (statNumbers[0]) {
-
-                statNumbers[0].textContent =
-                    devices.length;
-
-            }
-
-
-            if (statNumbers[1]) {
-
-                statNumbers[1].textContent =
-                    online;
-
-            }
-
-
-            if (statNumbers[2]) {
-
-                statNumbers[2].textContent =
-                    devices.length;
-
-            }
-
-
-            const label =
-                document.querySelector(
-                    ".section-header span"
-                );
-
-
-            if (label) {
-
-                label.textContent =
-                    `${devices.length} phone${
-                        devices.length === 1
-                            ? ""
-                            : "s"
-                    }`;
-
-            }
-
-        }
-
-
-        // =====================================================
-        // RENDER PHONES
-        // =====================================================
-
-        function renderPhones() {
-
-            const grid =
-                document.getElementById(
-                    "computerGrid"
-                );
-
-
-            if (!devices.length) {
-
-                grid.innerHTML = `
-
-                    <div class="computer-card">
-
-                        <div class="computer-top">
-
-                            <div class="computer-icon">
-                                📱
-                            </div>
-
-                            <div class="status offline">
-
-                                <div class="status-dot"></div>
-
-                                No registered phone
-
-                            </div>
-
-                        </div>
-
-
-                        <div class="computer-name">
-                            No phones connected
-                        </div>
-
-
-                        <div class="computer-id">
-                            Waiting for Web Phone Agent...
-                        </div>
-
-
-                        <div class="computer-info">
-
-                            <span>
-                                Registered Phones
-                            </span>
-
-                            <span>
-                                0
-                            </span>
-
-                        </div>
-
-                    </div>
-
-                `;
-
-                return;
-            }
-
-
-            grid.innerHTML =
-                devices.map(
-                    device => {
-
-                        const name =
-                            device.name ||
-                            device.model ||
-                            "Android Device";
-
-
-                        return `
-
-                            <div class="computer-card">
-
-                                <div class="computer-top">
-
-                                    <div class="computer-icon">
-                                        📱
-                                    </div>
-
-
-                                    <div class="status online">
-
-                                        <div class="status-dot"></div>
-
-                                        Online
-
-                                    </div>
-
-                                </div>
-
-
-                                <div class="computer-name">
-
-                                    ${escapeHtml(
-                                        name
-                                    )}
-
-                                </div>
-
-
-                                <div class="computer-id">
-
-                                    ${escapeHtml(
-                                        device.model ||
-                                        "Android Device"
-                                    )}
-
-                                </div>
-
-
-                                <div class="computer-info">
-
-                                    <span>
-                                        Device ID
-                                    </span>
-
-                                    <span>
-
-                                        ${escapeHtml(
-                                            device.id
-                                        )}
-
-                                    </span>
-
-                                </div>
-
-
-                                <button
-                                    class="open-button"
-                                    onclick="openPhone('${escapeHtml(
-                                        device.id
-                                    )}')"
-                                >
-                                    Open Phone
-                                </button>
-
-                            </div>
-
-                        `;
-
-                    }
-                ).join("");
-
-        }
-
-
-        // =====================================================
-        // OPEN PHONE
-        // =====================================================
-
-        function openPhone(
-            deviceId
-        ) {
-
-            const device =
-                devices.find(
-                    d =>
-                        d.id ===
-                        deviceId
-                );
-
-
-            if (!device) {
-
-                return;
-
-            }
-
-
-            selectedDevice =
-                device;
-
-
-            dashboardPage.style.display =
-                "none";
-
-            devicePage.style.display =
-                "block";
-
-            viewerPage.style.display =
-                "none";
-
-
-            document.getElementById(
-                "computerName"
-            ).textContent =
-                device.name ||
-                device.model ||
-                "Android Device";
-
-
-            document.getElementById(
-                "computerId"
-            ).textContent =
-                device.id;
-
-
-            document.getElementById(
-                "pageTitle"
-            ).textContent =
-                device.name ||
-                device.model ||
-                "Android Device";
-
-
-            document.getElementById(
-                "pageDescription"
-            ).textContent =
-                "Android device connected to Cloudflare.";
-
-
-            renderSelectedDevice();
-
-        }
-
-
-        // =====================================================
-        // SELECTED DEVICE
-        // =====================================================
-
-        function renderSelectedDevice() {
-
-            const grid =
-                document.getElementById(
-                    "deviceGrid"
-                );
-
-
-            if (!selectedDevice) {
-
-                grid.innerHTML = "";
-
-                return;
-
-            }
-
-
-            const name =
-                selectedDevice.name ||
-                selectedDevice.model ||
-                "Android Device";
-
-
-            grid.innerHTML = `
-
-                <div
-                    class="device-card"
-                    onclick="openViewer()"
-                >
-
-                    <div class="device-icon">
-                        📱
-                    </div>
-
-
-                    <div class="device-name">
-
-                        ${escapeHtml(
-                            name
-                        )}
-
-                    </div>
-
-
-                    <div class="device-model">
-
-                        ${escapeHtml(
-                            selectedDevice.model ||
-                            "Android Device"
-                        )}
-
-                    </div>
-
-
-                    <div class="status online">
-
-                        <div class="status-dot"></div>
-
-                        Online
-
-                    </div>
-
-                </div>
-
-            `;
-
-        }
-
-
-        // =====================================================
-        // OPEN VIEWER
-        // =====================================================
-
-        function openViewer() {
-
-            if (!selectedDevice) {
-
-                return;
-
-            }
-
-
-            dashboardPage.style.display =
-                "none";
-
-            devicePage.style.display =
-                "none";
-
-            viewerPage.style.display =
-                "block";
-
-
-            const name =
-                selectedDevice.name ||
-                selectedDevice.model ||
-                "Android Device";
-
-
-            document.getElementById(
-                "viewerName"
-            ).textContent =
-                name;
-
-
-            document.getElementById(
-                "pageTitle"
-            ).textContent =
-                name;
-
-
-            document.getElementById(
-                "pageDescription"
-            ).textContent =
-                `Device ID: ${selectedDevice.id}`;
-
-
-            updateViewerStatus(
-                selectedDevice
-            );
-
-        }
-
-
-        // =====================================================
-        // VIEWER STATUS
-        // =====================================================
-
-        function updateViewerStatus(
-            device
-        ) {
-
-            const status =
-                document.querySelector(
-                    ".viewer-status"
-                );
-
-
-            if (!status) {
-
-                return;
-
-            }
-
-
-            status.textContent =
-                device.online === true
-                    ? "● Connected"
-                    : "● Offline";
-
-        }
-
-
-        // =====================================================
-        // BACK TO PHONES
-        // =====================================================
-
-        function showComputers() {
-
-            selectedDevice =
-                null;
-
-
-            dashboardPage.style.display =
-                "block";
-
-            devicePage.style.display =
-                "none";
-
-            viewerPage.style.display =
-                "none";
-
-
-            document.getElementById(
-                "pageTitle"
-            ).textContent =
-                "My Phones";
-
-
-            document.getElementById(
-                "pageDescription"
-            ).textContent =
-                "Manage connected Android phones.";
-
-
-            loadDevices();
-
-        }
-
-
-        // =====================================================
-        // BACK TO DEVICE
-        // =====================================================
-
-        function showDevices() {
-
-            dashboardPage.style.display =
-                "none";
-
-            devicePage.style.display =
-                "block";
-
-            viewerPage.style.display =
-                "none";
-
-
-            renderSelectedDevice();
-
-        }
-
-
-        // =====================================================
-        // LOGOUT
-        // =====================================================
-
-        function logout() {
-
-            showComputers();
-
-        }
-
-
-        // =====================================================
-        // MENU
-        // =====================================================
-
-        document
-            .querySelectorAll(
-                ".menu a"
-            )
-            .forEach(
-                link => {
-
-                    link.addEventListener(
-                        "click",
-                        event => {
-
-                            event.preventDefault();
-
-
-                            document
-                                .querySelectorAll(
-                                    ".menu a"
-                                )
-                                .forEach(
-                                    item => {
-
-                                        item.classList.remove(
-                                            "active"
-                                        );
-
-                                    }
-                                );
-
-
-                            link.classList.add(
-                                "active"
-                            );
-
-
-                            if (
-                                link.textContent
-                                    .trim()
-                                    .toLowerCase() ===
-                                "dashboard"
-                            ) {
-
-                                showComputers();
-
-                            }
-
-                        }
-                    );
-
-                }
-            );
-
-
-        // =====================================================
-        // START
-        // =====================================================
-
-        document.getElementById(
-            "pageTitle"
-        ).textContent =
-            "My Phones";
-
-
-        document.getElementById(
-            "pageDescription"
-        ).textContent =
-            "Manage connected Android phones.";
-
-
-        loadDevices();
-
-
-        refreshTimer =
-            setInterval(
-                loadDevices,
-                5000
-            );
-
-    </script>
-
+<aside class="sidebar">
+    <div class="logo">Remote<span>Phone</span></div>
+    <div class="menu-title">Workspace</div>
+    <ul class="menu">
+        <li><a href="#" data-page="dashboard" class="active">Dashboard</a></li>
+        <li><a href="#" data-page="phones">Phones</a></li>
+        <li><a href="#" data-page="devices">Devices</a></li>
+        <li><a href="#" data-page="files">Files</a></li>
+        <li><a href="#" data-page="settings">Settings</a></li>
+    </ul>
+    <div class="logout"><button onclick="logout()">↪ Logout</button></div>
+</aside>
+<main class="main">
+<header class="topbar">
+    <div class="page-title"><h1 id="pageTitle">Dashboard</h1><p id="pageDescription">Manage your registered Android phones.</p><p style="margin-top:6px;color:#4ade80;font-size:11px;">CONNECTED • Cloudflare</p></div>
+    <div class="user">Admin<div class="avatar">A</div></div>
+</header>
+<section id="dashboardPage" class="page active">
+    <div class="stats">
+        <div class="stat-card"><div class="stat-label">Registered Phones</div><div class="stat-number" id="statRegistered">0</div></div>
+        <div class="stat-card"><div class="stat-label">Online Phones</div><div class="stat-number" id="statOnline">0</div></div>
+        <div class="stat-card"><div class="stat-label">Categories</div><div class="stat-number" id="statCategories">1</div></div>
+        <div class="stat-card"><div class="stat-label">Detected Devices</div><div class="stat-number" id="statDetected">0</div></div>
+    </div>
+    <div class="section-header"><div><h2>Phone Categories</h2><span>Open a folder to see the phones inside it.</span></div><button class="btn primary" onclick="openCategoryModal()">＋ Add Category</button></div>
+    <div class="folder-grid" id="dashboardCategories"></div>
+</section>
+<section id="phonesPage" class="page">
+    <div class="tabs"><button class="tab active" id="tabRegistered" onclick="setPhoneTab('registered')">Registered</button><button class="tab" id="tabNew" onclick="setPhoneTab('new')">Register New</button></div>
+    <div class="section-header"><div><h2 id="phoneSectionTitle">Registered Phones</h2><span id="phoneSectionDescription">Phones available in your dashboard.</span></div><div class="toolbar"><input id="phoneSearch" class="search-input" placeholder="Search phone..." oninput="renderPhonesPage()"></div></div>
+    <div id="phonesContent"></div>
+</section>
+<section id="devicesPage" class="page">
+    <div class="section-header"><div><h2>Devices</h2><span>All devices discovered by Web Phone Agent.</span></div><button class="btn" onclick="loadDevices()">↻ Refresh</button></div>
+    <div id="devicesContent"></div>
+</section>
+<section id="filesPage" class="page">
+    <div class="section-header"><div><h2>Files</h2><span>Dashboard file area. Remote phone files will be connected later.</span></div><div class="toolbar"><button class="btn" onclick="createFolder()">＋ Folder</button><button class="btn primary" onclick="document.getElementById('fileInput').click()">＋ Add File</button><input id="fileInput" type="file" hidden onchange="addLocalFile(this)"></div></div>
+    <div class="file-toolbar"><span id="fileBreadcrumb" style="color:#687483;font-size:12px;">Home</span><input id="fileSearch" class="search-input" placeholder="Search files..." oninput="renderFiles()"></div>
+    <div id="filesContent"></div>
+</section>
+<section id="settingsPage" class="page">
+    <div class="section-header"><div><h2>Settings</h2><span>Dashboard preferences and connection information.</span></div></div>
+    <div class="settings-list">
+        <div class="settings-row"><div><div class="settings-title">Dark interface</div><div class="settings-description">Current dashboard uses the dark interface.</div></div><button id="themeToggle" class="toggle active" onclick="toggleTheme()"></button></div>
+        <div class="settings-row"><div><div class="settings-title">Automatic refresh</div><div class="settings-description">Refresh device status every 5 seconds.</div></div><button id="refreshToggle" class="toggle active" onclick="toggleRefresh()"></button></div>
+        <div class="settings-row"><div><div class="settings-title">Cloudflare Worker</div><div class="settings-description">Current API endpoint used by the dashboard.</div></div><span style="font-size:11px;color:#687483;">Connected</span></div>
+        <div class="settings-row"><div><div class="settings-title">Data storage</div><div class="settings-description">Categories and temporary dashboard preferences are stored locally for this first UI version. They will move to Cloudflare when the registration/category API is added.</div></div></div>
+    </div>
+</section>
+<section id="viewerPage" class="page">
+    <button class="back-button" onclick="showPage('phones')">← Back to Phones</button>
+    <div class="viewer"><div class="viewer-header"><div><div class="viewer-name" id="viewerName">Android Device</div><div id="viewerStatus" class="viewer-status">● Offline</div></div></div><div class="viewer-note">Viewer area is prepared. WebRTC subscribe/control will be connected in the next revision.</div><div class="screen-area"><div class="phone-screen">Waiting for<br>device stream...</div></div><div class="controls"><button class="control-button">◀</button><button class="control-button">●</button><button class="control-button">▣</button><button class="control-button">📷</button><button class="control-button">⛶</button></div></div>
+</section>
+</main>
+<div id="modalBackdrop" class="modal-backdrop" onclick="closeModal(event)"><div class="modal" onclick="event.stopPropagation()"><h3 id="modalTitle"></h3><p id="modalDescription"></p><div id="modalBody"></div><div class="modal-actions"><button class="btn" onclick="closeModal()">Cancel</button><button class="btn primary" id="modalSave">Save</button></div></div></div>
+<div id="toast" class="toast"></div>
+<script>
+const API_URL='https://web-phone-oneforall.danip4848.workers.dev';
+const STORE='remotephone_dashboard_v1';
+let devices=[], phoneTab='registered', refreshEnabled=true, refreshTimer=null, selectedCategory=null, currentFolder='root';
+const info={dashboard:['Dashboard','Manage your registered Android phones.'],phones:['Phones','Register, organize, and rename your Android phones.'],devices:['Devices','All devices discovered by Web Phone Agent.'],files:['Files','Browse dashboard files and folders.'],settings:['Settings','Dashboard preferences and connection information.'],viewer:['Phone Viewer','Live phone control area.']};
+function getState(){const base={categories:[{id:'no-category',name:'No Category',system:true}],categoryMap:{},renames:{},files:[],folders:[]};try{return Object.assign(base,JSON.parse(localStorage.getItem(STORE)||'{}'));}catch{return base;}}
+function saveState(s){localStorage.setItem(STORE,JSON.stringify(s));}
+function esc(v){return String(v??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#039;');}
+function toast(msg){const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');clearTimeout(window.__toast);window.__toast=setTimeout(()=>t.classList.remove('show'),2500);}
+function showPage(name){document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));document.getElementById(name+'Page').classList.add('active');document.querySelectorAll('.menu a').forEach(x=>x.classList.toggle('active',x.dataset.page===name));document.getElementById('pageTitle').textContent=info[name][0];document.getElementById('pageDescription').textContent=info[name][1];if(name==='dashboard')renderDashboard();if(name==='phones')renderPhonesPage();if(name==='devices')renderDevices();if(name==='files')renderFiles();}
+document.querySelectorAll('.menu a').forEach(a=>a.addEventListener('click',e=>{e.preventDefault();showPage(a.dataset.page);}));
+function isRegistered(d){if(d.registered!==undefined)return d.registered===true;return true;}
+function nameOf(d){const s=getState();return d.displayName||s.renames[d.id]||d.name||d.model||'Android Device';}
+function catOf(d){const s=getState();return d.categoryId||s.categoryMap[d.id]||'no-category';}
+function catName(id){const c=getState().categories.find(x=>x.id===id);return c?c.name:'No Category';}
+function regs(){return devices.filter(isRegistered);}
+async function loadDevices(){try{const r=await fetch(API_URL+'/api/devices',{cache:'no-store'});if(!r.ok)throw new Error('HTTP '+r.status);const d=await r.json();devices=Array.isArray(d.devices)?d.devices:[];renderDashboard();renderPhonesPage();renderDevices();}catch(e){console.error(e);toast('Gagal mengambil daftar device dari Cloudflare.');}}
+function renderDashboard(){const s=getState(),rs=regs();document.getElementById('statRegistered').textContent=rs.length;document.getElementById('statOnline').textContent=rs.filter(d=>d.online).length;document.getElementById('statCategories').textContent=s.categories.length;document.getElementById('statDetected').textContent=devices.length;const counts={};s.categories.forEach(c=>counts[c.id]=0);rs.forEach(d=>counts[catOf(d)]=(counts[catOf(d)]||0)+1);document.getElementById('dashboardCategories').innerHTML=s.categories.map(c=>`<div class="folder-card" onclick="openCategory('${esc(c.id)}')"><div class="folder-icon">📁</div><div class="folder-name">${esc(c.name)}</div><div class="folder-meta">${counts[c.id]||0} phone${counts[c.id]===1?'':'s'}</div></div>`).join('');}
+function openCategory(id){selectedCategory=id;showPage('phones');document.getElementById('phoneSearch').value='';renderPhonesPage();}
+function setPhoneTab(tab){phoneTab=tab;document.getElementById('tabRegistered').classList.toggle('active',tab==='registered');document.getElementById('tabNew').classList.toggle('active',tab==='new');renderPhonesPage();}
+function renderPhonesPage(){const q=(document.getElementById('phoneSearch').value||'').toLowerCase();let list=phoneTab==='registered'?regs():devices.filter(d=>!isRegistered(d));if(selectedCategory&&phoneTab==='registered')list=list.filter(d=>catOf(d)===selectedCategory);if(q)list=list.filter(d=>(nameOf(d)+' '+(d.model||'')+' '+d.id).toLowerCase().includes(q));document.getElementById('phoneSectionTitle').textContent=phoneTab==='registered'?(selectedCategory?catName(selectedCategory):'Registered Phones'):'Register New';document.getElementById('phoneSectionDescription').textContent=phoneTab==='registered'?'Phones available in your dashboard.':'New devices waiting for registration.';const box=document.getElementById('phonesContent');if(!list.length){box.innerHTML=`<div class="empty-state"><strong>${phoneTab==='registered'?'No phones found':'No new devices found'}</strong>${phoneTab==='registered'?'Register a device or select another category.':'A new device will appear here when its Agent connects and the Worker reports it as unregistered.'}</div>`;return;}box.innerHTML='<div class="phone-grid">'+list.map(phoneCard).join('')+'</div>';}
+function phoneCard(d){const online=d.online===true;return `<div class="phone-card"><div class="phone-top"><div class="phone-icon">📱</div><div class="status ${online?'online':'offline'}"><span class="status-dot"></span>${online?'Online':'Offline'}</div></div><div class="phone-name-row"><div class="device-name">${esc(nameOf(d))}</div><button class="pencil" title="Rename" onclick="renamePhone('${esc(d.id)}')">✎</button></div><div class="device-model">${esc(d.model||'Unknown model')}</div><div class="device-id">ID: ${esc(d.id)}</div><div class="phone-actions">${isRegistered(d)?`<button class="btn" onclick="openViewer('${esc(d.id)}')">Open Phone</button><button class="btn" onclick="changeCategory('${esc(d.id)}')">Category</button>`:`<button class="btn primary" onclick="registerPhone('${esc(d.id)}')">Register</button>`}</div></div>`;}
+function renderDevices(){const box=document.getElementById('devicesContent');if(!devices.length){box.innerHTML='<div class="empty-state"><strong>No devices detected</strong>Connect Web Phone Agent to Cloudflare.</div>';return;}box.innerHTML='<div class="table-wrap"><table class="device-table"><thead><tr><th>Name</th><th>Model</th><th>Status</th><th>Registered</th><th>Device ID</th><th></th></tr></thead><tbody>'+devices.map(d=>`<tr><td>${esc(nameOf(d))}</td><td>${esc(d.model||'-')}</td><td><span class="status ${d.online?'online':'offline'}"><span class="status-dot"></span>${d.online?'Online':'Offline'}</span></td><td>${isRegistered(d)?'Yes':'No'}</td><td>${esc(d.id)}</td><td><button class="btn" onclick="openViewer('${esc(d.id)}')">Open</button></td></tr>`).join('')+'</tbody></table></div>';}
+function openViewer(id){const d=devices.find(x=>x.id===id);if(!d)return;document.getElementById('viewerName').textContent=nameOf(d);document.getElementById('viewerStatus').textContent=d.online?'● Online':'● Offline';document.getElementById('viewerStatus').style.color=d.online?'#4ade80':'#f87171';showPage('viewer');}
+function openCategoryModal(){openModal('Add Category','Create a folder for your phones.','<div class="field"><label>Category name</label><input id="categoryName" maxlength="40" placeholder="Example: Samsung"></div>',()=>{const n=document.getElementById('categoryName').value.trim();if(!n)return toast('Nama kategori belum diisi.');const s=getState();s.categories.push({id:'cat-'+Date.now(),name:n});saveState(s);closeModal();renderDashboard();toast('Category dibuat.');});}
+function renamePhone(id){const d=devices.find(x=>x.id===id);openModal('Rename Phone','Nama tampilan bisa diubah tanpa mengubah model atau Device ID.','<div class="field"><label>Phone name</label><input id="phoneName" maxlength="50" value="'+esc(nameOf(d))+'"></div>',()=>{const n=document.getElementById('phoneName').value.trim();if(!n)return toast('Nama belum diisi.');const s=getState();s.renames[id]=n;saveState(s);closeModal();renderDashboard();renderPhonesPage();renderDevices();toast('Nama disimpan sementara di browser.');});}
+function changeCategory(id){const s=getState(),d=devices.find(x=>x.id===id);const opts=s.categories.map(c=>`<option value="${esc(c.id)}" ${catOf(d)===c.id?'selected':''}>${esc(c.name)}</option>`).join('');openModal('Move Phone','Pilih folder kategori untuk phone ini.','<div class="field"><label>Category</label><select id="phoneCategory">'+opts+'</select></div>',()=>{s.categoryMap[id]=document.getElementById('phoneCategory').value;saveState(s);closeModal();renderDashboard();renderPhonesPage();toast('Category diperbarui.');});}
+function registerPhone(id){toast('UI siap untuk registration API. Backend Cloudflare perlu endpoint register agar status ini permanen.');}
+function openModal(title,desc,body,save){document.getElementById('modalTitle').textContent=title;document.getElementById('modalDescription').textContent=desc;document.getElementById('modalBody').innerHTML=body;document.getElementById('modalSave').onclick=save;document.getElementById('modalBackdrop').classList.add('show');}
+function closeModal(e){if(e&&e.target!==document.getElementById('modalBackdrop'))return;document.getElementById('modalBackdrop').classList.remove('show');}
+function createFolder(){openModal('New Folder','Create a folder in the dashboard file area.','<div class="field"><label>Folder name</label><input id="folderName" maxlength="60" placeholder="Example: Reports"></div>',()=>{const n=document.getElementById('folderName').value.trim();if(!n)return toast('Nama folder belum diisi.');const s=getState();s.folders.push({id:'folder-'+Date.now(),name:n,parent:currentFolder});saveState(s);closeModal();renderFiles();toast('Folder dibuat.');});}
+function addLocalFile(input){const f=input.files&&input.files[0];if(!f)return;const s=getState();s.files.push({id:'file-'+Date.now(),name:f.name,size:f.size,parent:currentFolder});saveState(s);input.value='';renderFiles();toast('File ditambahkan ke dashboard.');}
+function renderFiles(){const s=getState(),q=(document.getElementById('fileSearch').value||'').toLowerCase();const folders=s.folders.filter(f=>f.parent===currentFolder);const files=s.files.filter(f=>f.parent===currentFolder);document.getElementById('fileBreadcrumb').textContent=currentFolder==='root'?'Home':(s.folders.find(f=>f.id===currentFolder)||{}).name||'Home';const box=document.getElementById('filesContent');let html='';if(currentFolder!=='root')html+='<button class="btn" style="margin-bottom:12px" onclick="goParentFolder()">← Back</button>';const ff=folders.filter(f=>f.name.toLowerCase().includes(q));const fi=files.filter(f=>f.name.toLowerCase().includes(q));if(ff.length)html+='<div class="file-grid" style="margin-bottom:12px">'+ff.map(f=>`<div class="file-card clickable" onclick="openFolder('${esc(f.id)}')"><div class="file-icon">📁</div><div class="file-name">${esc(f.name)}</div><div class="file-note">Folder</div></div>`).join('')+'</div>';if(fi.length)html+='<div class="file-grid">'+fi.map(f=>`<div class="file-card"><div class="file-icon">📄</div><div class="file-name">${esc(f.name)}</div><div class="file-note">Dashboard file • ${formatBytes(f.size||0)}</div></div>`).join('')+'</div>';if(!ff.length&&!fi.length)html+='<div class="empty-state"><strong>Folder is empty</strong>Add a folder or file to this dashboard area.</div>';box.innerHTML=html;}
+function openFolder(id){currentFolder=id;renderFiles();}function goParentFolder(){const s=getState(),f=s.folders.find(x=>x.id===currentFolder);currentFolder=f&&f.parent?f.parent:'root';renderFiles();}function formatBytes(n){if(!n)return '0 B';const u=['B','KB','MB','GB'];let i=0;while(n>=1024&&i<u.length-1){n/=1024;i++;}return n.toFixed(i?1:0)+' '+u[i];}
+function toggleTheme(){toast('Dark interface sedang aktif. Tema lain bisa ditambahkan nanti.');}
+function toggleRefresh(){refreshEnabled=!refreshEnabled;document.getElementById('refreshToggle').classList.toggle('active',refreshEnabled);if(refreshEnabled){loadDevices();refreshTimer=setInterval(loadDevices,5000);}else{clearInterval(refreshTimer);refreshTimer=null;}}
+function logout(){toast('Logout akan dihubungkan ke sistem login pada tahap berikutnya.');}
+loadDevices();renderDashboard();renderPhonesPage();renderDevices();renderFiles();refreshTimer=setInterval(loadDevices,5000);
+</script>
 </body>
 </html>
