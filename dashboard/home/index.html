@@ -2644,6 +2644,70 @@ async function startViewerStream(deviceId) {
         // subscription. The browser answers it.
         // =================================================
 
+        // =================================================
+        // 2. GET CLOUDFLARE TURN / STUN SERVERS
+        //
+        // The Worker already exposes /api/turn. Use its
+        // returned credentials instead of relying only on
+        // browser STUN. This is important for networks/VPNs
+        // where the browser cannot obtain a usable candidate.
+        // =================================================
+
+        console.log(
+            "[Viewer] Mengambil Cloudflare TURN server..."
+        );
+
+        const turnResponse =
+            await fetch(
+                `${API_URL}/api/turn`,
+                {
+                    method: "GET",
+                    cache: "no-store"
+                }
+            );
+
+        if (!turnResponse.ok) {
+            throw new Error(
+                `TURN HTTP ${turnResponse.status}`
+            );
+        }
+
+        const turnData =
+            await turnResponse.json();
+
+        console.log(
+            "[Viewer] TURN response:",
+            turnData
+        );
+
+        if (
+            !turnData ||
+            !Array.isArray(turnData.iceServers) ||
+            turnData.iceServers.length === 0
+        ) {
+            throw new Error(
+                "Cloudflare TURN server tidak tersedia."
+            );
+        }
+
+        const iceServers =
+            turnData.iceServers;
+
+        console.log(
+            "[Viewer] ICE servers:",
+            iceServers
+        );
+
+
+        // =================================================
+        // 3. CREATE RECEIVING PEER CONNECTION
+        //
+        // IMPORTANT:
+        // Do NOT create a browser offer here.
+        // Cloudflare creates the offer for a remote
+        // subscription. The browser answers it.
+        // =================================================
+
         const pc =
             new RTCPeerConnection({
 
@@ -2657,21 +2721,14 @@ async function startViewerStream(deviceId) {
                 rtcpMuxPolicy:
                     "require",
 
-                iceServers: [
-                    {
-                        urls: [
-                            "stun:stun.cloudflare.com:3478",
-                            "stun:stun.l.google.com:19302"
-                        ]
-                    }
-                ]
+                iceServers: iceServers
             });
 
         viewerPeerConnection =
             pc;
 
         console.log(
-            "[Viewer] PeerConnection dibuat"
+            "[Viewer] PeerConnection dibuat dengan Cloudflare TURN"
         );
 
 
