@@ -810,7 +810,7 @@ class RealtimeManager(
          * langsung ambil localDescription terbaru.
          */
         if (
-            connection.iceGatheringState ==
+            connection.iceGatheringState() ==
                 PeerConnection.IceGatheringState.COMPLETE
         ) {
 
@@ -843,7 +843,7 @@ class RealtimeManager(
                 override fun run() {
 
                     val state =
-                        connection.iceGatheringState
+                        connection.iceGatheringState()
 
                     val localDescription =
                         connection.localDescription
