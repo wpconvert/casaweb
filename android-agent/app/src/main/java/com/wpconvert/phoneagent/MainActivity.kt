@@ -301,7 +301,7 @@ class MainActivity : Activity() {
 
                 val connection =
                     URL(
-                        "https://web-phone-oneforall.danip4848.workers.dev/api/register-request"
+                        "https://web-phone-oneforall.danip4848.workers.dev/api/registration-request"
                     ).openConnection()
                         as HttpURLConnection
 
@@ -364,7 +364,7 @@ class MainActivity : Activity() {
                             when (responseStatus) {
                                 "registered" ->
                                     "Sudah Registered"
-                                "pending" ->
+                                "requested" ->
                                     "Request Terkirim"
                                 else ->
                                     "Request Register"
@@ -374,7 +374,7 @@ class MainActivity : Activity() {
                             when (responseStatus) {
                                 "registered" ->
                                     "Status: Device sudah Registered"
-                                "pending" ->
+                                "requested" ->
                                     "Status: Menunggu approval dashboard"
                                 else ->
                                     "Status: Request berhasil"
