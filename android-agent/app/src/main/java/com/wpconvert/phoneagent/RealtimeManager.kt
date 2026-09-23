@@ -15,6 +15,7 @@ import org.webrtc.SurfaceTextureHelper
 import org.webrtc.VideoSource
 import org.webrtc.VideoTrack
 import org.webrtc.VideoCapturer
+import org.webrtc.DataChannel
 import org.webrtc.VideoFrame
 import java.net.HttpURLConnection
 import java.net.URL
@@ -31,6 +32,9 @@ class RealtimeManager(
 
         private const val WORKER_URL =
             "https://web-phone-oneforall.danip4848.workers.dev"
+
+        private const val CONTROL_CHANNEL_NAME =
+            "controls"
     }
 
     // =====================================================
@@ -67,6 +71,19 @@ class RealtimeManager(
 
     private var currentSessionId:
         String? = null
+
+    // =====================================================
+    // CONTROL DATACHANNEL
+    // =====================================================
+
+    private var controlDataChannel:
+        DataChannel? = null
+
+    private var controlChannelId:
+        Int? = null
+
+    @Volatile
+    private var controlChannelReady = false
 
     // =====================================================
     // INITIALIZE WEBRTC
@@ -593,8 +610,12 @@ class RealtimeManager(
 
                             Log.d(
                                 TAG,
-                                "DataChannel diterima"
+                                "DataChannel diterima: ${dataChannel.label()}"
                             )
+
+                            if (dataChannel.label() == CONTROL_CHANNEL_NAME) {
+                                attachControlDataChannel(dataChannel)
+                            }
                         }
 
                         override fun onRenegotiationNeeded() {
@@ -1372,6 +1393,226 @@ class RealtimeManager(
     }
 
     // =====================================================
+    // CONTROL DATACHANNEL
+    // =====================================================
+
+    /**
+     * Membuat DataChannel kontrol yang sudah dialokasikan oleh
+     * Cloudflare SFU. Channel ini menggunakan negotiated=true,
+     * sehingga ID harus sama dengan ID yang dikembalikan Worker
+     * untuk endpoint Android publisher.
+     *
+     * Fungsi ini sengaja dipisahkan dari publishToCloudflare()
+     * supaya jalur video yang sekarang sudah stabil tidak berubah.
+     */
+    fun setupControlDataChannel(
+        channelId: Int,
+        callback: ((Boolean, String?) -> Unit)? = null
+    ) {
+
+        val connection =
+            peerConnection
+
+        if (connection == null) {
+            Log.e(
+                TAG,
+                "Tidak bisa membuat control DataChannel: PeerConnection belum tersedia"
+            )
+            callback?.invoke(false, "PeerConnection belum tersedia")
+            return
+        }
+
+        try {
+
+            controlDataChannel?.dispose()
+            controlDataChannel = null
+            controlChannelReady = false
+            controlChannelId = channelId
+
+            val init =
+                DataChannel.Init().apply {
+                    ordered = true
+                    negotiated = true
+                    id = channelId
+                }
+
+            val channel =
+                connection.createDataChannel(
+                    CONTROL_CHANNEL_NAME,
+                    init
+                )
+
+            if (channel == null) {
+                Log.e(
+                    TAG,
+                    "Gagal membuat control DataChannel"
+                )
+                callback?.invoke(false, "createDataChannel mengembalikan null")
+                return
+            }
+
+            attachControlDataChannel(channel)
+
+            Log.d(
+                TAG,
+                "Control DataChannel dibuat: id=$channelId label=$CONTROL_CHANNEL_NAME state=${channel.state()}"
+            )
+
+            callback?.invoke(true, null)
+
+        } catch (e: Exception) {
+
+            Log.e(
+                TAG,
+                "Gagal membuat control DataChannel",
+                e
+            )
+
+            controlDataChannel = null
+            controlChannelReady = false
+            callback?.invoke(
+                false,
+                e.message ?: "Unknown error"
+            )
+        }
+    }
+
+    private fun attachControlDataChannel(
+        channel: DataChannel
+    ) {
+
+        controlDataChannel = channel
+        controlChannelReady =
+            channel.state() == DataChannel.State.OPEN
+
+        channel.registerObserver(
+            object : DataChannel.Observer {
+
+                override fun onBufferedAmountChange(
+                    previousAmount: Long
+                ) {
+                    Log.d(
+                        TAG,
+                        "Control DataChannel buffered amount: $previousAmount"
+                    )
+                }
+
+                override fun onStateChange() {
+
+                    val state =
+                        channel.state()
+
+                    controlChannelReady =
+                        state == DataChannel.State.OPEN
+
+                    Log.d(
+                        TAG,
+                        "Control DataChannel state: $state"
+                    )
+                }
+
+                override fun onMessage(
+                    buffer: DataChannel.Buffer
+                ) {
+
+                    try {
+                        val bytes =
+                            ByteArray(buffer.data.remaining())
+
+                        buffer.data.get(bytes)
+
+                        val message =
+                            String(
+                                bytes,
+                                Charsets.UTF_8
+                            )
+
+                        Log.d(
+                            TAG,
+                            "Control DataChannel message: $message"
+                        )
+                    } catch (e: Exception) {
+                        Log.e(
+                            TAG,
+                            "Gagal membaca message control DataChannel",
+                            e
+                        )
+                    }
+                }
+            }
+        )
+    }
+
+    /**
+     * Mengirim perintah kontrol ke subscriber melalui Cloudflare SFU.
+     * Contoh payload: {"type":"back"}
+     */
+    fun sendControlCommand(
+        command: String
+    ): Boolean {
+
+        val channel =
+            controlDataChannel
+
+        if (channel == null) {
+            Log.e(
+                TAG,
+                "Control DataChannel belum dibuat"
+            )
+            return false
+        }
+
+        if (channel.state() != DataChannel.State.OPEN) {
+            Log.e(
+                TAG,
+                "Control DataChannel belum OPEN: ${channel.state()}"
+            )
+            return false
+        }
+
+        return try {
+
+            val buffer =
+                java.nio.ByteBuffer.wrap(
+                    command.toByteArray(Charsets.UTF_8)
+                )
+
+            val sent =
+                channel.send(
+                    DataChannel.Buffer(
+                        buffer,
+                        false
+                    )
+                )
+
+            Log.d(
+                TAG,
+                "Control command dikirim: $command sent=$sent"
+            )
+
+            sent
+
+        } catch (e: Exception) {
+
+            Log.e(
+                TAG,
+                "Gagal mengirim control command",
+                e
+            )
+
+            false
+        }
+    }
+
+    fun isControlChannelReady(): Boolean {
+        return controlChannelReady
+    }
+
+    fun getControlChannelId(): Int? {
+        return controlChannelId
+    }
+
+    // =====================================================
     // SET REMOTE ANSWER
     // =====================================================
 
@@ -1580,6 +1821,21 @@ class RealtimeManager(
         )
 
         stopScreenCapture()
+
+        try {
+
+            controlDataChannel?.unregisterObserver()
+            controlDataChannel?.dispose()
+
+        } catch (_: Exception) {
+        }
+
+        controlDataChannel =
+            null
+        controlChannelId =
+            null
+        controlChannelReady =
+            false
 
         try {
 
