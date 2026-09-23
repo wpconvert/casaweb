@@ -178,15 +178,18 @@ tr:last-child td{border-bottom:0}
 .viewer{
     background:var(--panel);border:1px solid var(--border);border-radius:11px;padding:17px
 }
+.viewer:fullscreen{padding:24px;border:0;border-radius:0;background:#050709}
+.viewer:fullscreen .screen-area{height:calc(100vh - 120px);min-height:0}
+.viewer:fullscreen .phone-video{height:calc(100vh - 170px);max-height:calc(100vh - 170px);max-width:95%}
 .viewer-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px}
 .viewer-name{font-size:16px;font-weight:700}
 .viewer-sub{font-size:10px;color:var(--muted2);margin-top:5px}
 .screen-area{
-    min-height:540px;background:#050709;border:1px solid #1e2731;border-radius:9px;
+    min-height:650px;background:#050709;border:1px solid #1e2731;border-radius:9px;
     display:flex;align-items:center;justify-content:center;position:relative;overflow:hidden
 }
 .phone-video{
-    display:none;width:auto;height:min(76vh,560px);max-width:90%;max-height:calc(100vh - 250px);
+    display:none;width:auto;height:min(82vh,760px);max-width:92%;max-height:calc(100vh - 220px);
     aspect-ratio:9 / 20;object-fit:contain;background:#000;border:4px solid #303943;border-radius:18px;
     touch-action:none;user-select:none;-webkit-user-drag:none;cursor:default
 }
@@ -411,18 +414,21 @@ tr:last-child td{border-bottom:0}
     <div class="viewer">
         <div class="viewer-head">
             <div><div class="viewer-name" id="viewerName">Android Device</div><div class="viewer-sub" id="viewerSub">Waiting for WebRTC...</div></div>
-            <div class="status" id="viewerStatus"></div>
+            <div style="display:flex;align-items:center;gap:12px">
+                <div class="status" id="viewerStatus"></div>
+                <div class="status" id="controlStatus"><span class="dot"></span>Control Connecting</div>
+            </div>
         </div>
         <div class="screen-area">
             <video id="phoneVideo" class="phone-video" autoplay playsinline muted></video>
             <div class="viewer-message" id="viewerMessage">Membuka koneksi WebRTC...<br><br>Live screen akan muncul di sini.</div>
         </div>
         <div class="controls">
-            <button class="btn icon" onclick="showToast('Back command belum dihubungkan.')">◀</button>
-            <button class="btn icon" onclick="showToast('Home command belum dihubungkan.')">●</button>
-            <button class="btn icon" onclick="showToast('Recent command belum dihubungkan.')">▣</button>
-            <button class="btn icon" onclick="showToast('Screenshot belum dihubungkan.')">▧</button>
-            <button class="btn icon" onclick="showToast('Fullscreen belum dihubungkan.')">⛶</button>
+            <button class="btn" onclick="sendViewerCommand('back')">◀ Back</button>
+            <button class="btn" onclick="sendViewerCommand('home')">● Home</button>
+            <button class="btn" onclick="sendViewerCommand('recents')">▣ Recent</button>
+            <button class="btn" onclick="takeViewerScreenshot()">▧ Screenshot</button>
+            <button class="btn" onclick="toggleViewerFullscreen()">⛶ Fullscreen</button>
         </div>
     </div>
 </section>
@@ -450,6 +456,9 @@ let autoRefresh = true;
 let viewerPeerConnection = null;
 let viewerStream = null;
 let viewerSessionId = null;
+let viewerControlChannel = null;
+let viewerControlReady = false;
+let viewerPublisherSessionId = null;
 
 const STORAGE = {
     categories: "rp_categories_v3",
@@ -2627,57 +2636,7 @@ async function startViewerStream(deviceId) {
 
 
         // =================================================
-        // 2. GET SHORT-LIVED CLOUDFLARE TURN CREDENTIALS
-        //
-        // TURN_API_TOKEN / TURN_TOKEN_ID tetap berada
-        // di Worker. Browser hanya menerima credential
-        // sementara dari /api/turn.
-        // =================================================
-
-        console.log(
-            "[Viewer] Meminta ICE servers dari Cloudflare..."
-        );
-
-        const turnResponse =
-            await fetch(
-                `${API_URL}/api/turn`,
-                {
-                    method: "GET",
-                    cache: "no-store"
-                }
-            );
-
-        const turnData =
-            await turnResponse.json();
-
-        if (
-            !turnResponse.ok ||
-            !turnData?.ok ||
-            !Array.isArray(turnData?.iceServers) ||
-            turnData.iceServers.length === 0
-        ) {
-            throw new Error(
-                turnData?.error ||
-                `TURN HTTP ${turnResponse.status}`
-            );
-        }
-
-        console.log(
-            "[Viewer] ICE servers diterima:",
-            turnData.iceServers.map(
-                server => ({
-                    urls: server.urls,
-                    hasUsername:
-                        Boolean(server.username),
-                    hasCredential:
-                        Boolean(server.credential)
-                })
-            )
-        );
-
-
-        // =================================================
-        // 3. CREATE RECEIVING PEER CONNECTION
+        // 2. CREATE RECEIVING PEER CONNECTION
         //
         // IMPORTANT:
         // Do NOT create a browser offer here.
@@ -2698,8 +2657,14 @@ async function startViewerStream(deviceId) {
                 rtcpMuxPolicy:
                     "require",
 
-                iceServers:
-                    turnData.iceServers
+                iceServers: [
+                    {
+                        urls: [
+                            "stun:stun.cloudflare.com:3478",
+                            "stun:stun.l.google.com:19302"
+                        ]
+                    }
+                ]
             });
 
         viewerPeerConnection =
@@ -2801,19 +2766,6 @@ async function startViewerStream(deviceId) {
                         "[Viewer] local ICE candidate:",
                         event.candidate.candidate
                     );
-
-                    const candidate =
-                        event.candidate.candidate || "";
-
-                    const candidateTypeMatch =
-                        candidate.match(/ typ ([a-z]+)/i);
-
-                    if (candidateTypeMatch) {
-                        console.log(
-                            "[Viewer] ICE candidate type:",
-                            candidateTypeMatch[1]
-                        );
-                    }
 
                 } else {
 
@@ -3199,7 +3151,26 @@ async function startViewerStream(deviceId) {
 
 
         // =================================================
-        // 12. MEDIA STATISTICS
+        // 12. CONTROL DATACHANNEL
+        // =================================================
+
+        try {
+            await setupViewerControlChannel(deviceId);
+        } catch (controlError) {
+            console.error("[Viewer] Control setup:", controlError);
+            const controlStatus = document.getElementById("controlStatus");
+            if (controlStatus) {
+                controlStatus.innerHTML = `
+                    <span class="dot"></span>
+                    Control Error
+                `;
+            }
+            showToast("Live screen aktif, tetapi control belum tersambung.");
+        }
+
+
+        // =================================================
+        // 13. MEDIA STATISTICS
         // =================================================
 
         const statsTimer =
@@ -3317,6 +3288,239 @@ async function startViewerStream(deviceId) {
 }
 
 
+// =====================================================
+// CONTROL DATACHANNEL
+// =====================================================
+
+async function setupViewerControlChannel(deviceId) {
+    const status = document.getElementById("controlStatus");
+    viewerControlReady = false;
+    viewerControlChannel = null;
+    viewerPublisherSessionId = null;
+
+    if (status) {
+        status.innerHTML = '<span class="dot"></span>Control Connecting';
+    }
+
+    const pc = viewerPeerConnection;
+    if (!pc || !viewerSessionId) {
+        throw new Error("Viewer PeerConnection belum siap untuk control.");
+    }
+
+    // Ambil publisher session ID dari stream yang sedang live.
+    const streamResponse = await fetch(
+        `${API_URL}/stream?deviceId=${encodeURIComponent(deviceId)}`,
+        { cache: "no-store" }
+    );
+    const streamData = await streamResponse.json();
+
+    if (!streamResponse.ok || !streamData?.stream?.sessionId) {
+        throw new Error(
+            streamData?.error || "Publisher session ID tidak ditemukan."
+        );
+    }
+
+    viewerPublisherSessionId = streamData.stream.sessionId;
+
+    // 1. Tambahkan transport DataChannel ke PeerConnection viewer.
+    const establishResponse = await fetch(
+        `${API_URL}/api/datachannel-establish`,
+        {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                sessionId: viewerSessionId,
+                location: "remote",
+                dataChannelName: "server-events"
+            })
+        }
+    );
+
+    const establishData = await establishResponse.json();
+
+    if (!establishResponse.ok) {
+        throw new Error(
+            establishData?.error ||
+            `DataChannel establish HTTP ${establishResponse.status}`
+        );
+    }
+
+    const transportOffer =
+        establishData?.sessionDescription ||
+        establishData?.cloudflare?.sessionDescription;
+
+    if (!transportOffer?.sdp) {
+        throw new Error("Cloudflare tidak mengembalikan SDP DataChannel.");
+    }
+
+    await pc.setRemoteDescription(
+        new RTCSessionDescription({
+            type: transportOffer.type || "offer",
+            sdp: transportOffer.sdp
+        })
+    );
+
+    const answer = await pc.createAnswer();
+    await pc.setLocalDescription(answer);
+    await waitForIceGatheringComplete(pc, 10000);
+
+    const answerSdp = pc.localDescription?.sdp || "";
+    if (!answerSdp) {
+        throw new Error("SDP answer DataChannel tidak tersedia.");
+    }
+
+    const renegotiateResponse = await fetch(
+        `${API_URL}/api/renegotiate`,
+        {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                sessionId: viewerSessionId,
+                sdp: answerSdp
+            })
+        }
+    );
+
+    const renegotiateData = await renegotiateResponse.json();
+    if (!renegotiateResponse.ok) {
+        throw new Error(
+            renegotiateData?.error ||
+            `DataChannel renegotiate HTTP ${renegotiateResponse.status}`
+        );
+    }
+
+    // 2. Subscriber browser mengambil channel controls milik publisher Android.
+    const subscribeControlResponse = await fetch(
+        `${API_URL}/api/datachannel-subscribe`,
+        {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                sessionId: viewerSessionId,
+                publisherSessionId: viewerPublisherSessionId,
+                dataChannelName: "controls",
+                canReply: true
+            })
+        }
+    );
+
+    const subscribeControlData = await subscribeControlResponse.json();
+
+    if (!subscribeControlResponse.ok) {
+        throw new Error(
+            subscribeControlData?.error ||
+            `Control subscribe HTTP ${subscribeControlResponse.status}`
+        );
+    }
+
+    const channelId =
+        subscribeControlData?.dataChannels?.[0]?.id;
+
+    if (channelId === undefined || channelId === null) {
+        throw new Error("Cloudflare tidak mengembalikan control channel ID.");
+    }
+
+    const channel = pc.createDataChannel("controls", {
+        negotiated: true,
+        id: Number(channelId),
+        ordered: true
+    });
+
+    viewerControlChannel = channel;
+
+    channel.onopen = () => {
+        viewerControlReady = true;
+        if (status) {
+            status.innerHTML = '<span class="dot online"></span>Control Connected';
+        }
+        console.log("[Viewer] Control DataChannel OPEN", channelId);
+    };
+
+    channel.onclose = () => {
+        viewerControlReady = false;
+        if (status) {
+            status.innerHTML = '<span class="dot"></span>Control Disconnected';
+        }
+        console.warn("[Viewer] Control DataChannel CLOSED");
+    };
+
+    channel.onerror = event => {
+        viewerControlReady = false;
+        if (status) {
+            status.innerHTML = '<span class="dot"></span>Control Error';
+        }
+        console.error("[Viewer] Control DataChannel error:", event);
+    };
+
+    channel.onmessage = event => {
+        console.log("[Viewer] Control message:", event.data);
+    };
+
+    if (channel.readyState === "open") {
+        viewerControlReady = true;
+        if (status) {
+            status.innerHTML = '<span class="dot online"></span>Control Connected';
+        }
+    }
+}
+
+function sendViewerCommand(type) {
+    if (!viewerControlChannel || viewerControlChannel.readyState !== "open") {
+        showToast("Control belum terhubung ke APK.");
+        return;
+    }
+
+    try {
+        viewerControlChannel.send(
+            JSON.stringify({ type })
+        );
+        console.log("[Viewer] command sent:", type);
+    } catch (error) {
+        console.error("[Viewer] send command:", error);
+        showToast("Gagal mengirim command.");
+    }
+}
+
+function takeViewerScreenshot() {
+    const video = document.getElementById("phoneVideo");
+
+    if (!video || !video.videoWidth || !video.videoHeight) {
+        showToast("Live screen belum siap.");
+        return;
+    }
+
+    const canvas = document.createElement("canvas");
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+
+    const context = canvas.getContext("2d");
+    context.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+    const link = document.createElement("a");
+    link.download = `phone-${selectedDevice?.id || "screen"}-${Date.now()}.png`;
+    link.href = canvas.toDataURL("image/png");
+    link.click();
+
+    showToast("Screenshot disimpan.");
+}
+
+async function toggleViewerFullscreen() {
+    const viewer = document.querySelector(".viewer");
+    if (!viewer) return;
+
+    try {
+        if (document.fullscreenElement) {
+            await document.exitFullscreen();
+        } else {
+            await viewer.requestFullscreen();
+        }
+    } catch (error) {
+        console.error("Fullscreen:", error);
+        showToast("Fullscreen tidak tersedia di browser ini.");
+    }
+}
+
+
 function stopViewerStream() {
 
     if (
@@ -3350,6 +3554,17 @@ function stopViewerStream() {
 
     viewerSessionId =
         null;
+    viewerPublisherSessionId = null;
+    viewerControlReady = false;
+    if (viewerControlChannel) {
+        try { viewerControlChannel.close(); } catch (_) {}
+    }
+    viewerControlChannel = null;
+
+    const controlStatus = document.getElementById("controlStatus");
+    if (controlStatus) {
+        controlStatus.innerHTML = '<span class="dot"></span>Control Offline';
+    }
 
     const video =
         document.getElementById(
