@@ -31,7 +31,7 @@ class MainActivity : Activity() {
     private lateinit var registrationStatus: TextView
     private lateinit var captureButton: Button
     private lateinit var brightnessButton: Button
-    private lateinit var registerButton
+    private lateinit var registerButton: Button
 
     private lateinit var webSocket: WebSocketClientManager
     private lateinit var realtimeManager: RealtimeManager
