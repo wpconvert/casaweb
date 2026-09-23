@@ -1,186 +1,267 @@
 package com.wpconvert.phoneagent
 
-import android.content.Context
+import android.app.Activity
+import android.app.Notification
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
+import android.app.Service
 import android.content.Intent
-import android.media.projection.MediaProjection
+import android.content.pm.ServiceInfo
+import android.os.Build
 import android.os.Handler
+import android.os.IBinder
 import android.os.Looper
+import android.os.PowerManager
+import android.provider.Settings
 import android.util.Log
-import org.json.JSONObject
-import org.webrtc.IceCandidate
-import org.webrtc.MediaConstraints
-import org.webrtc.PeerConnection
-import org.webrtc.PeerConnectionFactory
-import org.webrtc.ScreenCapturerAndroid
-import org.webrtc.SessionDescription
-import org.webrtc.SurfaceTextureHelper
-import org.webrtc.VideoSource
-import org.webrtc.VideoTrack
-import java.net.HttpURLConnection
-import java.net.URL
-import kotlin.concurrent.thread
 
-class RealtimeManager(
-    private val context: Context
-) {
+class ScreenCaptureService : Service() {
 
     companion object {
 
-        private const val TAG =
-            "RealtimeManager"
+        const val PREFS_NAME =
+            "web_phone_agent"
 
-        private const val WORKER_URL =
-            "https://web-phone-oneforall.danip4848.workers.dev"
+        const val KEY_ACTIVE =
+            "screen_capture_active"
+
+        const val KEY_WIDTH =
+            "screen_capture_width"
+
+        const val KEY_HEIGHT =
+            "screen_capture_height"
+
+        const val KEY_LAST_FRAME_AT =
+            "screen_capture_last_frame_at"
+
+        const val ACTION_START =
+            "com.wpconvert.phoneagent.START_CAPTURE"
+
+        const val ACTION_STOP =
+            "com.wpconvert.phoneagent.STOP_CAPTURE"
+
+        const val EXTRA_RESULT_CODE =
+            "result_code"
+
+        const val EXTRA_RESULT_DATA =
+            "result_data"
+
+        private const val CHANNEL_ID =
+            "web_phone_agent_capture"
+
+        private const val NOTIFICATION_ID =
+            1001
+
+        private const val TAG =
+            "ScreenCaptureService"
     }
 
-    // =====================================================
+    // =========================
+    // HANDLER
+    // =========================
+
+    private val serviceHandler =
+        Handler(Looper.getMainLooper())
+
+    // =========================
     // WEBRTC
-    // =====================================================
+    // =========================
 
-    private var peerConnectionFactory:
-        PeerConnectionFactory? = null
+    private var realtimeManager:
+        RealtimeManager? = null
 
-    private var peerConnection:
-        PeerConnection? = null
+    // =========================
+    // WAKE LOCK
+    // =========================
 
-    private var videoSource:
-        VideoSource? = null
+    private var wakeLock:
+        PowerManager.WakeLock? = null
 
-    private var videoTrack:
-        VideoTrack? = null
+    // =========================
+    // PREFS
+    // =========================
 
-    private var surfaceTextureHelper:
-        SurfaceTextureHelper? = null
+    private val prefs by lazy {
 
-    private var screenCapturer:
-        ScreenCapturerAndroid? = null
+        getSharedPreferences(
+            PREFS_NAME,
+            MODE_PRIVATE
+        )
+    }
 
-    // =====================================================
-    // STATE
-    // =====================================================
+    // =========================
+    // SERVICE CREATE
+    // =========================
 
-    private var initialized =
-        false
+    override fun onCreate() {
 
-    private var capturing =
-        false
-
-    private var currentSessionId:
-        String? = null
-
-    // =====================================================
-    // INITIALIZE WEBRTC
-    // =====================================================
-
-    fun initialize() {
-
-        if (initialized) {
-
-            Log.d(
-                TAG,
-                "WebRTC sudah diinisialisasi"
-            )
-
-            return
-        }
+        super.onCreate()
 
         Log.d(
             TAG,
-            "Memulai inisialisasi WebRTC"
+            "ScreenCaptureService dibuat"
         )
 
-        try {
+        createNotificationChannel()
+    }
 
-            PeerConnectionFactory.initialize(
-                PeerConnectionFactory
-                    .InitializationOptions
-                    .builder(
-                        context.applicationContext
-                    )
-                    .setEnableInternalTracer(
-                        false
-                    )
-                    .createInitializationOptions()
-            )
+    // =========================
+    // START COMMAND
+    // =========================
 
-            val eglBase =
-                org.webrtc.EglBase.create()
+    override fun onStartCommand(
+        intent: Intent?,
+        flags: Int,
+        startId: Int
+    ): Int {
 
-            val encoderFactory =
-                org.webrtc.DefaultVideoEncoderFactory(
-                    eglBase.eglBaseContext,
-                    true,
-                    true
-                )
+        Log.d(
+            TAG,
+            "onStartCommand action=${intent?.action}"
+        )
 
-            val decoderFactory =
-                org.webrtc.DefaultVideoDecoderFactory(
-                    eglBase.eglBaseContext
-                )
+        when (intent?.action) {
 
-            peerConnectionFactory =
-                PeerConnectionFactory
-                    .builder()
-                    .setVideoEncoderFactory(
-                        encoderFactory
-                    )
-                    .setVideoDecoderFactory(
-                        decoderFactory
-                    )
-                    .createPeerConnectionFactory()
+            // =========================
+            // STOP
+            // =========================
 
-            initialized =
-                peerConnectionFactory != null
-
-            if (initialized) {
+            ACTION_STOP -> {
 
                 Log.d(
                     TAG,
-                    "WebRTC berhasil diinisialisasi"
+                    "ACTION_STOP diterima"
                 )
 
-            } else {
+                stopCapture()
 
-                Log.e(
-                    TAG,
-                    "PeerConnectionFactory = null"
-                )
+                return START_NOT_STICKY
             }
 
-        } catch (e: Exception) {
+            // =========================
+            // START
+            // =========================
 
-            Log.e(
+            ACTION_START -> {
+
+                Log.d(
+                    TAG,
+                    "ACTION_START diterima"
+                )
+
+                /*
+                 * Foreground service harus aktif
+                 * SEBELUM RealtimeManager menjalankan
+                 * ScreenCapturerAndroid.
+                 */
+
+                startForegroundWithNotification()
+
+                val resultCode =
+                    intent.getIntExtra(
+                        EXTRA_RESULT_CODE,
+                        -1
+                    )
+
+                val data =
+                    if (
+                        Build.VERSION.SDK_INT >= 33
+                    ) {
+
+                        intent.getParcelableExtra(
+                            EXTRA_RESULT_DATA,
+                            Intent::class.java
+                        )
+
+                    } else {
+
+                        @Suppress("DEPRECATION")
+                        intent.getParcelableExtra(
+                            EXTRA_RESULT_DATA
+                        )
+                    }
+
+                if (
+                    resultCode !=
+                    Activity.RESULT_OK ||
+                    data == null
+                ) {
+
+                    Log.e(
+                        TAG,
+                        "Data MediaProjection tidak valid"
+                    )
+
+                    prefs.edit()
+                        .putBoolean(
+                            KEY_ACTIVE,
+                            false
+                        )
+                        .apply()
+
+                    stopForegroundCompat()
+                    stopSelf()
+
+                    return START_NOT_STICKY
+                }
+
+                startCapture(
+                    resultCode,
+                    data
+                )
+            }
+        }
+
+        return START_STICKY
+    }
+
+    // =========================
+    // FOREGROUND SERVICE
+    // =========================
+
+    private fun startForegroundWithNotification() {
+
+        val notification =
+            buildNotification()
+
+        if (
+            Build.VERSION.SDK_INT >= 29
+        ) {
+
+            Log.d(
                 TAG,
-                "Gagal inisialisasi WebRTC",
-                e
+                "Memulai foreground service MEDIA_PROJECTION"
             )
 
-            initialized = false
+            startForeground(
+                NOTIFICATION_ID,
+                notification,
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION
+            )
+
+        } else {
+
+            startForeground(
+                NOTIFICATION_ID,
+                notification
+            )
         }
     }
 
-    // =====================================================
-    // START SCREEN CAPTURE
-    // =====================================================
+    // =========================
+    // START CAPTURE
+    // =========================
 
-    /*
-     * Fungsi ini dipanggil oleh
-     * ScreenCaptureService setelah
-     * foreground service MediaProjection
-     * sudah aktif.
-     */
-
-    fun startScreenCapture(
+    private fun startCapture(
         resultCode: Int,
-        projectionData: Intent
+        data: Intent
     ) {
 
-        if (!initialized) {
-
-            initialize()
-        }
-
-        if (capturing) {
+        if (
+            realtimeManager != null &&
+            realtimeManager?.isCapturing() == true
+        ) {
 
             Log.d(
                 TAG,
@@ -190,153 +271,174 @@ class RealtimeManager(
             return
         }
 
-        val factory =
-            peerConnectionFactory
-
-        if (factory == null) {
-
-            Log.e(
-                TAG,
-                "PeerConnectionFactory belum tersedia"
-            )
-
-            return
-        }
+        Log.d(
+            TAG,
+            "Menyiapkan screen capture"
+        )
 
         try {
 
+            // =========================
+            // DISPLAY INFO
+            // =========================
+
+            val metrics =
+                resources.displayMetrics
+
+            val width =
+                metrics.widthPixels
+
+            val height =
+                metrics.heightPixels
+
             Log.d(
                 TAG,
-                "Menyiapkan WebRTC screen capture"
+                "Display: ${width}x${height}"
             )
 
-            // =================================================
-            // EGL
-            // =================================================
+            prefs.edit()
+                .putInt(
+                    KEY_WIDTH,
+                    width
+                )
+                .putInt(
+                    KEY_HEIGHT,
+                    height
+                )
+                .apply()
 
-            val eglBase =
-                org.webrtc.EglBase.create()
+            // =========================
+            // CPU WAKE LOCK
+            // =========================
 
-            // =================================================
-            // SURFACE TEXTURE HELPER
-            // =================================================
+            acquireScreenWakeLock()
 
-            surfaceTextureHelper =
-                SurfaceTextureHelper.create(
-                    "ScreenCaptureThread",
-                    eglBase.eglBaseContext
+            // =========================
+            // REALTIME MANAGER
+            // =========================
+
+            Log.d(
+                TAG,
+                "Membuat RealtimeManager"
+            )
+
+            val manager =
+                RealtimeManager(
+                    applicationContext
                 )
 
-            // =================================================
-            // VIDEO SOURCE
-            // =================================================
+            realtimeManager =
+                manager
 
-            videoSource =
-                factory.createVideoSource(
-                    false
-                )
+            // =========================
+            // INITIALIZE WEBRTC
+            // =========================
 
-            // =================================================
-            // SCREEN CAPTURER
-            // =================================================
+            Log.d(
+                TAG,
+                "Inisialisasi WebRTC"
+            )
 
-            screenCapturer =
-                ScreenCapturerAndroid(
-                    projectionData,
-                    object : MediaProjection.Callback() {
+            manager.initialize()
 
-                        override fun onStop() {
+            // =========================
+            // START WEBRTC CAPTURE
+            // =========================
 
-                            Log.d(
-                                TAG,
-                                "MediaProjection dihentikan Android"
-                            )
+            Log.d(
+                TAG,
+                "Memulai WebRTC screen capture"
+            )
 
-                            capturing = false
-                        }
-                    }
-                )
+            manager.startScreenCapture(
+                resultCode,
+                data
+            )
 
-            val capturer =
-                screenCapturer
+            // =========================
+            // PEER CONNECTION
+            // =========================
 
-            val helper =
-                surfaceTextureHelper
+            Log.d(
+                TAG,
+                "Membuat PeerConnection"
+            )
 
-            val source =
-                videoSource
+            manager.createPeerConnection()
+
+            // =========================
+            // CHECK CAPTURE
+            // =========================
 
             if (
-                capturer == null ||
-                helper == null ||
-                source == null
+                !manager.isCapturing()
             ) {
 
                 Log.e(
                     TAG,
-                    "Komponen screen capture tidak lengkap"
+                    "WebRTC screen capture gagal aktif"
                 )
 
-                stopScreenCapture()
+                prefs.edit()
+                    .putBoolean(
+                        KEY_ACTIVE,
+                        false
+                    )
+                    .apply()
+
+                cleanupCapture()
+                stopForegroundCompat()
+                stopSelf()
 
                 return
             }
 
-            // =================================================
-            // INITIALIZE CAPTURER
-            // =================================================
+            // =========================
+            // SCREEN CAPTURE AKTIF
+            // =========================
 
-            capturer.initialize(
-                helper,
-                context.applicationContext,
-                source.capturerObserver
-            )
-
-            // =================================================
-            // START CAPTURE
-            // =================================================
-
-            Log.d(
-                TAG,
-                "Memulai capture 720x1600 @ 30 FPS"
-            )
-
-            capturer.startCapture(
-                720,
-                1600,
-                30
-            )
-
-            // =================================================
-            // VIDEO TRACK
-            // =================================================
-
-            videoTrack =
-                factory.createVideoTrack(
-                    "screen-track",
-                    source
+            prefs.edit()
+                .putBoolean(
+                    KEY_ACTIVE,
+                    true
                 )
-
-            videoTrack?.setEnabled(
-                true
-            )
-
-            capturing = true
+                .putLong(
+                    KEY_LAST_FRAME_AT,
+                    System.currentTimeMillis()
+                )
+                .apply()
 
             Log.d(
                 TAG,
-                "Screen capture berhasil dimulai"
+                "WebRTC screen capture AKTIF"
+            )
+
+            // =========================
+            // CLOUDFLARE PUBLISH
+            // =========================
+
+            startCloudflarePublishing(
+                manager
             )
 
         } catch (e: SecurityException) {
 
             Log.e(
                 TAG,
-                "SecurityException saat memulai MediaProjection",
+                "SecurityException saat memulai WebRTC capture",
                 e
             )
 
-            stopScreenCapture()
+            prefs.edit()
+                .putBoolean(
+                    KEY_ACTIVE,
+                    false
+                )
+                .apply()
+
+            cleanupCapture()
+            stopForegroundCompat()
+            stopSelf()
 
         } catch (e: Exception) {
 
@@ -346,847 +448,115 @@ class RealtimeManager(
                 e
             )
 
-            stopScreenCapture()
+            prefs.edit()
+                .putBoolean(
+                    KEY_ACTIVE,
+                    false
+                )
+                .apply()
+
+            cleanupCapture()
+            stopForegroundCompat()
+            stopSelf()
         }
     }
 
-    // =====================================================
-    // PEER CONNECTION
-    // =====================================================
+    // =========================
+    // CLOUDFLARE PUBLISH FLOW
+    // =========================
 
-    fun createPeerConnection() {
-
-        if (!initialized) {
-
-            initialize()
-        }
-
-        if (peerConnection != null) {
-
-            Log.d(
-                TAG,
-                "PeerConnection sudah ada"
-            )
-
-            return
-        }
-
-        val factory =
-            peerConnectionFactory
-
-        if (factory == null) {
-
-            Log.e(
-                TAG,
-                "PeerConnectionFactory tidak tersedia"
-            )
-
-            return
-        }
-
-        try {
-
-            // =================================================
-            // STUN
-            // =================================================
-
-            val iceServers =
-                listOf(
-                    PeerConnection.IceServer
-                        .builder(
-                            "stun:stun.cloudflare.com:3478"
-                        )
-                        .createIceServer()
-                )
-
-            val configuration =
-                PeerConnection.RTCConfiguration(
-                    iceServers
-                )
-
-            configuration.sdpSemantics =
-                PeerConnection.SdpSemantics
-                    .UNIFIED_PLAN
-
-            // =================================================
-            // PEER CONNECTION
-            // =================================================
-
-            peerConnection =
-                factory.createPeerConnection(
-                    configuration,
-                    object :
-                        PeerConnection.Observer {
-
-                        override fun onSignalingChange(
-                            state:
-                                PeerConnection.SignalingState
-                        ) {
-
-                            Log.d(
-                                TAG,
-                                "Signaling state: $state"
-                            )
-                        }
-
-                        override fun onIceConnectionChange(
-                            state:
-                                PeerConnection.IceConnectionState
-                        ) {
-
-                            Log.d(
-                                TAG,
-                                "ICE connection state: $state"
-                            )
-                        }
-
-                        override fun onIceConnectionReceivingChange(
-                            receiving: Boolean
-                        ) {
-
-                            Log.d(
-                                TAG,
-                                "ICE receiving: $receiving"
-                            )
-                        }
-
-                        override fun onIceGatheringChange(
-                            state:
-                                PeerConnection.IceGatheringState
-                        ) {
-
-                            Log.d(
-                                TAG,
-                                "ICE gathering state: $state"
-                            )
-                        }
-
-                        override fun onIceCandidate(
-                            candidate:
-                                IceCandidate
-                        ) {
-
-                            Log.d(
-                                TAG,
-                                "ICE candidate received"
-                            )
-                        }
-
-                        override fun onIceCandidatesRemoved(
-                            candidates:
-                                Array<out IceCandidate>
-                        ) {
-
-                            Log.d(
-                                TAG,
-                                "ICE candidates removed"
-                            )
-                        }
-
-                        override fun onAddStream(
-                            stream:
-                                org.webrtc.MediaStream
-                        ) {
-
-                            Log.d(
-                                TAG,
-                                "Remote stream ditambahkan"
-                            )
-                        }
-
-                        override fun onRemoveStream(
-                            stream:
-                                org.webrtc.MediaStream
-                        ) {
-
-                            Log.d(
-                                TAG,
-                                "Remote stream dihapus"
-                            )
-                        }
-
-                        override fun onDataChannel(
-                            dataChannel:
-                                org.webrtc.DataChannel
-                        ) {
-
-                            Log.d(
-                                TAG,
-                                "DataChannel diterima"
-                            )
-                        }
-
-                        override fun onRenegotiationNeeded() {
-
-                            Log.d(
-                                TAG,
-                                "Renegotiation diperlukan"
-                            )
-                        }
-
-                        override fun onAddTrack(
-                            receiver:
-                                org.webrtc.RtpReceiver,
-                            mediaStreams:
-                                Array<out org.webrtc.MediaStream>
-                        ) {
-
-                            Log.d(
-                                TAG,
-                                "Track diterima"
-                            )
-                        }
-
-                        override fun onTrack(
-                            transceiver:
-                                org.webrtc.RtpTransceiver
-                        ) {
-
-                            Log.d(
-                                TAG,
-                                "Transceiver track diterima"
-                            )
-                        }
-
-                        override fun onIceCandidateError(
-                            event:
-                                org.webrtc.IceCandidateErrorEvent
-                        ) {
-
-                            Log.e(
-                                TAG,
-                                "ICE candidate error: " +
-                                    event.errorText
-                            )
-                        }
-
-                        override fun onSelectedCandidatePairChanged(
-                            event:
-                                org.webrtc.CandidatePairChangeEvent
-                        ) {
-
-                            Log.d(
-                                TAG,
-                                "Selected candidate pair berubah"
-                            )
-                        }
-
-                        override fun onConnectionChange(
-                            newState:
-                                PeerConnection.PeerConnectionState
-                        ) {
-
-                            Log.d(
-                                TAG,
-                                "PeerConnection state: $newState"
-                            )
-                        }
-                    }
-                )
-
-            if (peerConnection == null) {
-
-                Log.e(
-                    TAG,
-                    "Gagal membuat PeerConnection"
-                )
-
-                return
-            }
-
-            Log.d(
-                TAG,
-                "PeerConnection berhasil dibuat"
-            )
-
-            // =================================================
-            // ADD SCREEN TRACK
-            // =================================================
-
-            videoTrack?.let { track ->
-
-                peerConnection?.addTrack(
-                    track,
-                    listOf(
-                        "screen-stream"
-                    )
-                )
-
-                Log.d(
-                    TAG,
-                    "Screen video track ditambahkan"
-                )
-            }
-
-        } catch (e: Exception) {
-
-            Log.e(
-                TAG,
-                "Gagal membuat PeerConnection",
-                e
-            )
-        }
-    }
-
-    // =====================================================
-    // CREATE OFFER
-    // =====================================================
-
-    fun createOffer(
-        callback:
-            (SessionDescription?) -> Unit
+    private fun startCloudflarePublishing(
+        manager: RealtimeManager
     ) {
 
-        val connection =
-            peerConnection
+        // =========================
+        // DEVICE ID
+        // =========================
 
-        if (connection == null) {
-
-            Log.e(
-                TAG,
-                "PeerConnection belum dibuat"
+        val deviceId =
+            Settings.Secure.getString(
+                contentResolver,
+                Settings.Secure.ANDROID_ID
             )
 
-            callback(null)
-
-            return
-        }
-
-        val constraints =
-            MediaConstraints().apply {
-
-                mandatory.add(
-                    MediaConstraints.KeyValuePair(
-                        "OfferToReceiveAudio",
-                        "false"
-                    )
-                )
-
-                mandatory.add(
-                    MediaConstraints.KeyValuePair(
-                        "OfferToReceiveVideo",
-                        "false"
-                    )
-                )
-            }
-
-        connection.createOffer(
-            object :
-                org.webrtc.SdpObserver {
-
-                override fun onCreateSuccess(
-                    description:
-                        SessionDescription
-                ) {
-
-                    Log.d(
-                        TAG,
-                        "SDP Offer berhasil dibuat"
-                    )
-
-                    connection.setLocalDescription(
-                        object :
-                            org.webrtc.SdpObserver {
-
-                            override fun onCreateSuccess(
-                                description:
-                                    SessionDescription
-                            ) {
-                            }
-
-                            override fun onSetSuccess() {
-
-                                Log.d(
-                                    TAG,
-                                    "Local SDP berhasil diset"
-                                )
-
-                                /*
-                                 * PENTING:
-                                 *
-                                 * Jangan langsung mengirim SDP hasil
-                                 * createOffer().
-                                 *
-                                 * Cloudflare Worker menerima SDP sebagai
-                                 * satu paket, jadi ICE candidate harus sudah
-                                 * terkumpul di localDescription terlebih dahulu.
-                                 */
-                                waitForIceGatheringComplete(
-                                    connection
-                                ) { finalDescription ->
-
-                                    if (finalDescription == null) {
-
-                                        Log.e(
-                                            TAG,
-                                            "Local SDP final tidak tersedia setelah ICE gathering"
-                                        )
-
-                                        callback(null)
-
-                                        return@waitForIceGatheringComplete
-                                    }
-
-                                    Log.d(
-                                        TAG,
-                                        "ICE gathering selesai"
-                                    )
-
-                                    Log.d(
-                                        TAG,
-                                        "Mengirim SDP final yang sudah berisi ICE candidate"
-                                    )
-
-                                    callback(
-                                        finalDescription
-                                    )
-                                }
-                            }
-
-                            override fun onCreateFailure(
-                                error: String
-                            ) {
-
-                                Log.e(
-                                    TAG,
-                                    "Local SDP create failure: $error"
-                                )
-
-                                callback(null)
-                            }
-
-                            override fun onSetFailure(
-                                error: String
-                            ) {
-
-                                Log.e(
-                                    TAG,
-                                    "Local SDP set failure: $error"
-                                )
-
-                                callback(null)
-                            }
-                        },
-                        description
-                    )
-                }
-
-                override fun onSetSuccess() {
-                }
-
-                override fun onCreateFailure(
-                    error: String
-                ) {
-
-                    Log.e(
-                        TAG,
-                        "Offer create failure: $error"
-                    )
-
-                    callback(null)
-                }
-
-                override fun onSetFailure(
-                    error: String
-                ) {
-                }
-            },
-            constraints
-        )
-    }
-
-    // =====================================================
-    // WAIT ICE GATHERING COMPLETE
-    // =====================================================
-
-    private fun waitForIceGatheringComplete(
-        connection: PeerConnection,
-        callback:
-            (SessionDescription?) -> Unit
-    ) {
-
-        /*
-         * Jika ICE sudah selesai sebelum fungsi ini dipanggil,
-         * langsung ambil localDescription terbaru.
-         */
         if (
-            connection.iceGatheringState() ==
-                PeerConnection.IceGatheringState.COMPLETE
+            deviceId.isNullOrBlank()
         ) {
 
-            Log.d(
+            Log.e(
                 TAG,
-                "ICE gathering sudah COMPLETE"
-            )
-
-            callback(
-                connection.localDescription
+                "ANDROID_ID tidak tersedia"
             )
 
             return
         }
 
-        val handler =
-            Handler(
-                Looper.getMainLooper()
-            )
-
-        val startTime =
-            System.currentTimeMillis()
-
-        val timeoutMs =
-            10000L
-
-        val checkRunnable =
-            object : Runnable {
-
-                override fun run() {
-
-                    val state =
-                        connection.iceGatheringState()
-
-                    val localDescription =
-                        connection.localDescription
-
-                    if (
-                        state ==
-                            PeerConnection.IceGatheringState.COMPLETE
-                    ) {
-
-                        Log.d(
-                            TAG,
-                            "ICE gathering COMPLETE"
-                        )
-
-                        callback(
-                            localDescription
-                        )
-
-                        return
-                    }
-
-                    val elapsed =
-                        System.currentTimeMillis() -
-                            startTime
-
-                    if (
-                        elapsed >= timeoutMs
-                    ) {
-
-                        Log.w(
-                            TAG,
-                            "ICE gathering timeout setelah ${timeoutMs}ms"
-                        )
-
-                        /*
-                         * Tetap gunakan localDescription terbaru jika
-                         * tersedia. Ini mencegah aplikasi menggantung
-                         * selamanya jika ICE gathering tidak mencapai
-                         * COMPLETE pada device/network tertentu.
-                         */
-                        callback(
-                            localDescription
-                        )
-
-                        return
-                    }
-
-                    handler.postDelayed(
-                        this,
-                        50L
-                    )
-                }
-            }
-
-        handler.post(
-            checkRunnable
+        Log.d(
+            TAG,
+            "Device ID: $deviceId"
         )
-    }
 
-    // =====================================================
-    // CREATE CLOUDFLARE SESSION
-    // =====================================================
-
-    fun createCloudflareSession(
-        callback:
-            (success: Boolean,
-             sessionId: String?,
-             error: String?) -> Unit
-    ) {
+        // =========================
+        // CREATE SESSION
+        // =========================
 
         Log.d(
             TAG,
-            "Meminta Cloudflare session baru"
+            "Membuat Cloudflare session"
         )
 
-        thread {
+        manager.createCloudflareSession {
+                success,
+                sessionId,
+                error ->
 
-            try {
-
-                val url =
-                    URL(
-                        "$WORKER_URL/api/session"
-                    )
-
-                val connectionHttp =
-                    url.openConnection()
-                        as HttpURLConnection
-
-                connectionHttp.requestMethod =
-                    "POST"
-
-                connectionHttp.setRequestProperty(
-                    "Accept",
-                    "application/json"
-                )
-
-                connectionHttp.connectTimeout =
-                    15000
-
-                connectionHttp.readTimeout =
-                    30000
-
-                connectionHttp.doOutput =
-                    true
-
-                connectionHttp.outputStream.use {
-                    it.write(
-                        "{}".toByteArray(
-                            Charsets.UTF_8
-                        )
-                    )
-                }
-
-                val responseCode =
-                    connectionHttp.responseCode
-
-                val responseText =
-                    if (
-                        responseCode in 200..299
-                    ) {
-
-                        connectionHttp
-                            .inputStream
-                            .bufferedReader()
-                            .use {
-                                it.readText()
-                            }
-
-                    } else {
-
-                        connectionHttp
-                            .errorStream
-                            ?.bufferedReader()
-                            ?.use {
-                                it.readText()
-                            }
-                            ?: "HTTP $responseCode"
-                    }
-
-                Log.d(
-                    TAG,
-                    "Session response code: $responseCode"
-                )
-
-                Log.d(
-                    TAG,
-                    "Session response: $responseText"
-                )
-
-                if (
-                    responseCode !in 200..299
-                ) {
-
-                    callback(
-                        false,
-                        null,
-                        responseText
-                    )
-
-                    connectionHttp.disconnect()
-
-                    return@thread
-                }
-
-                val json =
-                    JSONObject(
-                        responseText
-                    )
-
-                val sessionId =
-                    json.optString(
-                        "sessionId",
-                        ""
-                    )
-
-                if (
-                    sessionId.isEmpty()
-                ) {
-
-                    callback(
-                        false,
-                        null,
-                        "Cloudflare tidak mengembalikan sessionId: $responseText"
-                    )
-
-                    connectionHttp.disconnect()
-
-                    return@thread
-                }
-
-                currentSessionId =
-                    sessionId
-
-                Log.d(
-                    TAG,
-                    "Cloudflare session berhasil: $sessionId"
-                )
-
-                callback(
-                    true,
-                    sessionId,
-                    null
-                )
-
-                connectionHttp.disconnect()
-
-            } catch (e: Exception) {
+            if (
+                !success ||
+                sessionId.isNullOrBlank()
+            ) {
 
                 Log.e(
                     TAG,
-                    "Gagal membuat Cloudflare session",
-                    e
+                    "Gagal membuat Cloudflare session: $error"
                 )
 
-                callback(
-                    false,
-                    null,
-                    e.message
-                        ?: "Unknown error"
-                )
+                return@createCloudflareSession
             }
-        }
-    }
 
-    // =====================================================
-    // PUBLISH CLOUDFLARE
-    // =====================================================
-
-    fun publishToCloudflare(
-        sessionId: String,
-        deviceId: String,
-        callback: (
-            success: Boolean,
-            answer: SessionDescription?,
-            error: String?
-        ) -> Unit
-    ) {
-
-        val connection =
-            peerConnection
-
-        if (connection == null) {
-
-            callback(
-                false,
-                null,
-                "PeerConnection belum dibuat"
+            Log.d(
+                TAG,
+                "Cloudflare session berhasil: $sessionId"
             )
 
-            return
-        }
+            // =========================
+            // PUBLISH SCREEN
+            // =========================
 
-        currentSessionId =
-            sessionId
+            Log.d(
+                TAG,
+                "Mengirim screen ke Cloudflare"
+            )
 
-        Log.d(
-            TAG,
-            "Publish ke Cloudflare dimulai"
-        )
+            manager.publishToCloudflare(
+                sessionId,
+                deviceId
+            ) {
+                publishSuccess,
+                answer,
+                publishError ->
 
-        createOffer { offer ->
-
-            if (offer == null) {
-
-                callback(
-                    false,
-                    null,
-                    "Gagal membuat SDP offer"
-                )
-
-                return@createOffer
-            }
-
-            val sdp =
-                offer.description
-
-            thread {
-
-                try {
-
-                    val url =
-                        URL(
-                            "$WORKER_URL/api/publish"
-                        )
-
-                    val connectionHttp =
-                        url.openConnection()
-                            as HttpURLConnection
-
-                    connectionHttp.requestMethod =
-                        "POST"
-
-                    connectionHttp.setRequestProperty(
-                        "Content-Type",
-                        "application/json"
-                    )
-
-                    connectionHttp.setRequestProperty(
-                        "Accept",
-                        "application/json"
-                    )
-
-                    connectionHttp.connectTimeout =
-                        15000
-
-                    connectionHttp.readTimeout =
-                        30000
-
-                    connectionHttp.doOutput =
-                        true
-
-                    val body =
-                        JSONObject().apply {
-
-                            put(
-                                "sessionId",
-                                sessionId
-                            )
-
-                            put(
-                                "deviceId",
-                                deviceId
-                            )
-
-                            put(
-                                "sdp",
-                                sdp
-                            )
-
-                            put(
-                                "mid",
-                                "0"
-                            )
-
-                            put(
-                                "trackName",
-                                "screen-$deviceId"
-                            )
-                        }
+                if (
+                    publishSuccess
+                ) {
 
                     Log.d(
                         TAG,
-                        "Mengirim SDP ke Worker"
+                        "================================="
+                    )
+
+                    Log.d(
+                        TAG,
+                        "SCREEN BERHASIL DIPUBLISH"
                     )
 
                     Log.d(
@@ -1199,481 +569,319 @@ class RealtimeManager(
                         "Session ID: $sessionId"
                     )
 
-                    connectionHttp.outputStream.use {
-
-                        it.write(
-                            body.toString()
-                                .toByteArray(
-                                    Charsets.UTF_8
-                                )
-                        )
-                    }
-
-                    val responseCode =
-                        connectionHttp.responseCode
-
-                    val responseText =
-                        if (
-                            responseCode in 200..299
-                        ) {
-
-                            connectionHttp
-                                .inputStream
-                                .bufferedReader()
-                                .use {
-                                    it.readText()
-                                }
-
-                        } else {
-
-                            connectionHttp
-                                .errorStream
-                                ?.bufferedReader()
-                                ?.use {
-                                    it.readText()
-                                }
-                                ?: "HTTP $responseCode"
-                        }
-
                     Log.d(
                         TAG,
-                        "Cloudflare response code: $responseCode"
+                        "Cloudflare answer berhasil"
                     )
 
                     Log.d(
                         TAG,
-                        "Cloudflare response: $responseText"
+                        "================================="
                     )
 
-                    if (
-                        responseCode !in 200..299
-                    ) {
-
-                        callback(
-                            false,
-                            null,
-                            responseText
-                        )
-
-                        connectionHttp.disconnect()
-
-                        return@thread
-                    }
-
-                    val json =
-                        JSONObject(
-                            responseText
-                        )
-
-                    // =================================================
-                    // WORKER RESPONSE
-                    //
-                    // {
-                    //   "ok": true,
-                    //   "cloudflare": {
-                    //      "sessionDescription": {
-                    //          "type": "answer",
-                    //          "sdp": "..."
-                    //      }
-                    //   }
-                    // }
-                    // =================================================
-
-                    val cloudflare =
-                        json.optJSONObject(
-                            "cloudflare"
-                        )
-
-                    if (
-                        cloudflare == null
-                    ) {
-
-                        callback(
-                            false,
-                            null,
-                            "Response Worker tidak memiliki object cloudflare: $responseText"
-                        )
-
-                        connectionHttp.disconnect()
-
-                        return@thread
-                    }
-
-                    val sessionDescription =
-                        cloudflare.optJSONObject(
-                            "sessionDescription"
-                        )
-
-                    if (
-                        sessionDescription == null
-                    ) {
-
-                        callback(
-                            false,
-                            null,
-                            "Cloudflare tidak mengembalikan sessionDescription: $responseText"
-                        )
-
-                        connectionHttp.disconnect()
-
-                        return@thread
-                    }
-
-                    val answerSdp =
-                        sessionDescription.optString(
-                            "sdp",
-                            ""
-                        )
-
-                    if (
-                        answerSdp.isEmpty()
-                    ) {
-
-                        callback(
-                            false,
-                            null,
-                            "Cloudflare tidak mengembalikan SDP answer: $responseText"
-                        )
-
-                        connectionHttp.disconnect()
-
-                        return@thread
-                    }
-
-                    Log.d(
-                        TAG,
-                        "SDP answer Cloudflare berhasil ditemukan"
-                    )
-
-                    val answer =
-                        SessionDescription(
-                            SessionDescription.Type.ANSWER,
-                            answerSdp
-                        )
-
-                    // =================================================
-                    // SET REMOTE DESCRIPTION
-                    // =================================================
-
-                    connection.setRemoteDescription(
-                        object :
-                            org.webrtc.SdpObserver {
-
-                            override fun onCreateSuccess(
-                                description:
-                                    SessionDescription
-                            ) {
-                            }
-
-                            override fun onSetSuccess() {
-
-                                Log.d(
-                                    TAG,
-                                    "Remote SDP Cloudflare berhasil diset"
-                                )
-
-                                callback(
-                                    true,
-                                    answer,
-                                    null
-                                )
-                            }
-
-                            override fun onCreateFailure(
-                                error: String
-                            ) {
-
-                                Log.e(
-                                    TAG,
-                                    "onCreateFailure: $error"
-                                )
-
-                                callback(
-                                    false,
-                                    null,
-                                    error
-                                )
-                            }
-
-                            override fun onSetFailure(
-                                error: String
-                            ) {
-
-                                Log.e(
-                                    TAG,
-                                    "onSetFailure: $error"
-                                )
-
-                                callback(
-                                    false,
-                                    null,
-                                    error
-                                )
-                            }
-                        },
-                        answer
-                    )
-
-                    connectionHttp.disconnect()
-
-                } catch (e: Exception) {
+                } else {
 
                     Log.e(
                         TAG,
-                        "Gagal publish ke Cloudflare",
-                        e
-                    )
-
-                    callback(
-                        false,
-                        null,
-                        e.message
-                            ?: "Unknown error"
+                        "Publish Cloudflare gagal: $publishError"
                     )
                 }
             }
         }
     }
 
-    // =====================================================
-    // SET REMOTE ANSWER
-    // =====================================================
+    // =========================
+    // STOP CAPTURE
+    // =========================
 
-    fun setRemoteAnswer(
-        answer: SessionDescription,
-        callback:
-            (() -> Unit)? = null
-    ) {
-
-        val connection =
-            peerConnection
-
-        if (connection == null) {
-
-            Log.e(
-                TAG,
-                "PeerConnection belum dibuat"
-            )
-
-            return
-        }
-
-        connection.setRemoteDescription(
-            object :
-                org.webrtc.SdpObserver {
-
-                override fun onCreateSuccess(
-                    description:
-                        SessionDescription
-                ) {
-                }
-
-                override fun onSetSuccess() {
-
-                    Log.d(
-                        TAG,
-                        "Remote SDP berhasil diset"
-                    )
-
-                    callback?.invoke()
-                }
-
-                override fun onCreateFailure(
-                    error: String
-                ) {
-
-                    Log.e(
-                        TAG,
-                        "Remote SDP create failure: $error"
-                    )
-                }
-
-                override fun onSetFailure(
-                    error: String
-                ) {
-
-                    Log.e(
-                        TAG,
-                        "Remote SDP set failure: $error"
-                    )
-                }
-            },
-            answer
-        )
-    }
-
-    // =====================================================
-    // ICE
-    // =====================================================
-
-    fun addIceCandidate(
-        candidate: IceCandidate
-    ) {
-
-        val connection =
-            peerConnection
-
-        if (connection == null) {
-
-            Log.e(
-                TAG,
-                "PeerConnection belum tersedia"
-            )
-
-            return
-        }
-
-        connection.addIceCandidate(
-            candidate
-        )
-
-        Log.d(
-            TAG,
-            "ICE candidate ditambahkan"
-        )
-    }
-
-    // =====================================================
-    // GET VIDEO TRACK
-    // =====================================================
-
-    fun getVideoTrack():
-        VideoTrack? {
-
-        return videoTrack
-    }
-
-    // =====================================================
-    // CAPTURE STATUS
-    // =====================================================
-
-    fun isCapturing():
-        Boolean {
-
-        return capturing
-    }
-
-    // =====================================================
-    // STOP SCREEN CAPTURE
-    // =====================================================
-
-    fun stopScreenCapture() {
+    private fun stopCapture() {
 
         Log.d(
             TAG,
             "Menghentikan screen capture"
         )
 
-        try {
-
-            screenCapturer?.stopCapture()
-
-        } catch (e: Exception) {
-
-            Log.e(
-                TAG,
-                "Gagal stop screen capturer",
-                e
+        prefs.edit()
+            .putBoolean(
+                KEY_ACTIVE,
+                false
             )
-        }
+            .apply()
 
-        try {
+        cleanupCapture()
 
-            screenCapturer?.dispose()
+        stopForegroundCompat()
 
-        } catch (e: Exception) {
+        stopSelf()
+    }
 
-            Log.e(
-                TAG,
-                "Gagal dispose screen capturer",
-                e
-            )
-        }
+    // =========================
+    // CLEANUP
+    // =========================
 
-        screenCapturer =
-            null
-
-        try {
-
-            videoTrack?.dispose()
-
-        } catch (_: Exception) {
-        }
-
-        videoTrack =
-            null
-
-        try {
-
-            videoSource?.dispose()
-
-        } catch (_: Exception) {
-        }
-
-        videoSource =
-            null
-
-        try {
-
-            surfaceTextureHelper?.dispose()
-
-        } catch (_: Exception) {
-        }
-
-        surfaceTextureHelper =
-            null
-
-        capturing =
-            false
+    private fun cleanupCapture() {
 
         Log.d(
             TAG,
-            "Screen capture dihentikan"
+            "Cleanup capture"
+        )
+
+        try {
+
+            realtimeManager?.stopScreenCapture()
+
+        } catch (e: Exception) {
+
+            Log.e(
+                TAG,
+                "Gagal stop WebRTC capture",
+                e
+            )
+        }
+
+        try {
+
+            realtimeManager?.dispose()
+
+        } catch (e: Exception) {
+
+            Log.e(
+                TAG,
+                "Gagal dispose RealtimeManager",
+                e
+            )
+        }
+
+        realtimeManager =
+            null
+
+        releaseWakeLock()
+    }
+
+    // =========================
+    // WAKE LOCK
+    // =========================
+
+    private fun acquireScreenWakeLock() {
+
+        if (
+            wakeLock?.isHeld == true
+        ) {
+
+            return
+        }
+
+        try {
+
+            val powerManager =
+                getSystemService(
+                    PowerManager::class.java
+                )
+
+            wakeLock =
+                powerManager.newWakeLock(
+                    PowerManager.PARTIAL_WAKE_LOCK,
+                    "WebPhoneAgent::CaptureWakeLock"
+                )
+
+            wakeLock?.setReferenceCounted(
+                false
+            )
+
+            wakeLock?.acquire()
+
+            Log.d(
+                TAG,
+                "PARTIAL_WAKE_LOCK aktif"
+            )
+
+        } catch (e: Exception) {
+
+            Log.e(
+                TAG,
+                "Gagal membuat WakeLock",
+                e
+            )
+        }
+    }
+
+    private fun releaseWakeLock() {
+
+        try {
+
+            wakeLock?.let {
+
+                if (
+                    it.isHeld
+                ) {
+
+                    it.release()
+                }
+            }
+
+        } catch (_: Exception) {
+        }
+
+        wakeLock =
+            null
+    }
+
+    // =========================
+    // NOTIFICATION CHANNEL
+    // =========================
+
+    private fun createNotificationChannel() {
+
+        if (
+            Build.VERSION.SDK_INT < 26
+        ) {
+
+            return
+        }
+
+        val manager =
+            getSystemService(
+                NotificationManager::class.java
+            )
+
+        val channel =
+            NotificationChannel(
+                CHANNEL_ID,
+                "Web Phone Agent",
+                NotificationManager.IMPORTANCE_LOW
+            )
+
+        channel.description =
+            "Screen capture Web Phone Agent"
+
+        manager.createNotificationChannel(
+            channel
         )
     }
 
-    // =====================================================
-    // DISPOSE
-    // =====================================================
+    // =========================
+    // NOTIFICATION
+    // =========================
 
-    fun dispose() {
+    private fun buildNotification(): Notification {
+
+        val openIntent =
+            Intent(
+                this,
+                MainActivity::class.java
+            )
+
+        val flags =
+            PendingIntent.FLAG_UPDATE_CURRENT or
+                if (
+                    Build.VERSION.SDK_INT >= 23
+                ) {
+
+                    PendingIntent.FLAG_IMMUTABLE
+
+                } else {
+
+                    0
+                }
+
+        val pendingIntent =
+            PendingIntent.getActivity(
+                this,
+                0,
+                openIntent,
+                flags
+            )
+
+        val builder =
+            if (
+                Build.VERSION.SDK_INT >= 26
+            ) {
+
+                Notification.Builder(
+                    this,
+                    CHANNEL_ID
+                )
+
+            } else {
+
+                Notification.Builder(
+                    this
+                )
+            }
+
+        return builder
+            .setSmallIcon(
+                android.R.drawable.ic_menu_view
+            )
+            .setContentTitle(
+                "Web Phone Agent"
+            )
+            .setContentText(
+                "Screen capture aktif"
+            )
+            .setOngoing(
+                true
+            )
+            .setContentIntent(
+                pendingIntent
+            )
+            .build()
+    }
+
+    // =========================
+    // STOP FOREGROUND
+    // =========================
+
+    private fun stopForegroundCompat() {
+
+        if (
+            Build.VERSION.SDK_INT >= 24
+        ) {
+
+            stopForeground(
+                STOP_FOREGROUND_REMOVE
+            )
+
+        } else {
+
+            @Suppress("DEPRECATION")
+            stopForeground(
+                true
+            )
+        }
+    }
+
+    // =========================
+    // DESTROY
+    // =========================
+
+    override fun onDestroy() {
 
         Log.d(
             TAG,
-            "Dispose RealtimeManager"
+            "ScreenCaptureService dihancurkan"
         )
 
-        stopScreenCapture()
+        cleanupCapture()
 
-        try {
+        prefs.edit()
+            .putBoolean(
+                KEY_ACTIVE,
+                false
+            )
+            .apply()
 
-            peerConnection?.close()
+        super.onDestroy()
+    }
 
-        } catch (_: Exception) {
-        }
+    // =========================
+    // NOT BOUND
+    // =========================
 
-        peerConnection =
-            null
+    override fun onBind(
+        intent: Intent?
+    ): IBinder? {
 
-        try {
-
-            peerConnectionFactory?.dispose()
-
-        } catch (_: Exception) {
-        }
-
-        peerConnectionFactory =
-            null
-
-        initialized =
-            false
-
-        currentSessionId =
-            null
-
-        Log.d(
-            TAG,
-            "RealtimeManager selesai dispose"
-        )
+        return null
     }
 }
