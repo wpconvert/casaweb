@@ -997,9 +997,52 @@ class RealtimeManager(
                     )
                 }
 
-                override fun onMessage(
-                    buffer: DataChannel.Buffer
-                ) {
+override fun onMessage(
+    buffer: DataChannel.Buffer
+) {
+    try {
+
+        val bytes =
+            ByteArray(
+                buffer.data.remaining()
+            )
+
+        buffer.data.get(bytes)
+
+        val message =
+            String(
+                bytes,
+                Charsets.UTF_8
+            )
+
+        Log.d(
+            TAG,
+            "CONTROL RX=$message"
+        )
+
+        val command =
+            JSONObject(message)
+
+        val success =
+            RemoteAccessibilityService
+                .executeCommand(
+                    command
+                )
+
+        Log.d(
+            TAG,
+            "CONTROL executed=$success"
+        )
+
+    } catch (e: Exception) {
+
+        Log.e(
+            TAG,
+            "CONTROL message error",
+            e
+        )
+    }
+}
                     try {
                         val bytes =
                             ByteArray(
