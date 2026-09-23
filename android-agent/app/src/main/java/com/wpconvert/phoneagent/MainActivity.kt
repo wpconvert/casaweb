@@ -1,719 +1,887 @@
 package com.wpconvert.phoneagent
 
 import android.app.Activity
+import android.app.Notification
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
+import android.app.Service
 import android.content.Intent
-import android.media.projection.MediaProjectionManager
-import android.net.Uri
+import android.content.pm.ServiceInfo
 import android.os.Build
-import android.os.Bundle
 import android.os.Handler
+import android.os.IBinder
 import android.os.Looper
+import android.os.PowerManager
 import android.provider.Settings
-import android.view.Gravity
-import android.view.WindowManager
-import android.widget.Button
-import android.widget.LinearLayout
-import android.widget.TextView
-import org.json.JSONObject
-import java.net.HttpURLConnection
-import java.net.URL
+import android.util.Log
 
-class MainActivity : Activity() {
+class ScreenCaptureService : Service() {
 
-    private lateinit var status: TextView
-    private lateinit var captureButton: Button
-    private lateinit var brightnessButton: Button
-    private lateinit var registerButton: Button
+    companion object {
 
-    // WebSocket
-    private lateinit var webSocket: WebSocketClientManager
+        const val PREFS_NAME =
+            "web_phone_agent"
 
-    // WebRTC / Cloudflare Realtime
-    private lateinit var realtimeManager: RealtimeManager
+        const val KEY_ACTIVE =
+            "screen_capture_active"
 
-    private val captureRequestCode = 1001
+        const val KEY_WIDTH =
+            "screen_capture_width"
 
-    private val handler =
+        const val KEY_HEIGHT =
+            "screen_capture_height"
+
+        const val KEY_LAST_FRAME_AT =
+            "screen_capture_last_frame_at"
+
+        const val ACTION_START =
+            "com.wpconvert.phoneagent.START_CAPTURE"
+
+        const val ACTION_STOP =
+            "com.wpconvert.phoneagent.STOP_CAPTURE"
+
+        const val EXTRA_RESULT_CODE =
+            "result_code"
+
+        const val EXTRA_RESULT_DATA =
+            "result_data"
+
+        private const val CHANNEL_ID =
+            "web_phone_agent_capture"
+
+        private const val NOTIFICATION_ID =
+            1001
+
+        private const val TAG =
+            "ScreenCaptureService"
+    }
+
+    // =========================
+    // HANDLER
+    // =========================
+
+    private val serviceHandler =
         Handler(Looper.getMainLooper())
 
+    // =========================
+    // WEBRTC
+    // =========================
+
+    private var realtimeManager:
+        RealtimeManager? = null
+
+    // =========================
+    // WAKE LOCK
+    // =========================
+
+    private var wakeLock:
+        PowerManager.WakeLock? = null
+
+    // =========================
+    // PREFS
+    // =========================
+
     private val prefs by lazy {
+
         getSharedPreferences(
-            ScreenCaptureService.PREFS_NAME,
+            PREFS_NAME,
             MODE_PRIVATE
         )
     }
 
-    // Status 1 = registration lifecycle.
-    @Volatile
-    private var registrationStatus =
-        "unregistered"
+    // =========================
+    // SERVICE CREATE
+    // =========================
 
-    private val registrationPoll =
-        object : Runnable {
+    override fun onCreate() {
 
-            override fun run() {
+        super.onCreate()
 
-                refreshRegistrationStatus()
+        Log.d(
+            TAG,
+            "ScreenCaptureService dibuat"
+        )
 
-                handler.postDelayed(
-                    this,
-                    3000
+        createNotificationChannel()
+    }
+
+    // =========================
+    // START COMMAND
+    // =========================
+
+    override fun onStartCommand(
+        intent: Intent?,
+        flags: Int,
+        startId: Int
+    ): Int {
+
+        Log.d(
+            TAG,
+            "onStartCommand action=${intent?.action}"
+        )
+
+        when (intent?.action) {
+
+            // =========================
+            // STOP
+            // =========================
+
+            ACTION_STOP -> {
+
+                Log.d(
+                    TAG,
+                    "ACTION_STOP diterima"
                 )
+
+                stopCapture()
+
+                return START_NOT_STICKY
             }
-        }
 
-    private val statusPoll =
-        object : Runnable {
+            // =========================
+            // START
+            // =========================
 
-            override fun run() {
+            ACTION_START -> {
 
-                val active =
-                    prefs.getBoolean(
-                        ScreenCaptureService.KEY_ACTIVE,
-                        false
+                Log.d(
+                    TAG,
+                    "ACTION_START diterima"
+                )
+
+                /*
+                 * Foreground service harus aktif
+                 * SEBELUM RealtimeManager menjalankan
+                 * ScreenCapturerAndroid.
+                 */
+
+                startForegroundWithNotification()
+
+                val resultCode =
+                    intent.getIntExtra(
+                        EXTRA_RESULT_CODE,
+                        -1
                     )
 
-                val width =
-                    prefs.getInt(
-                        ScreenCaptureService.KEY_WIDTH,
-                        0
-                    )
-
-                val height =
-                    prefs.getInt(
-                        ScreenCaptureService.KEY_HEIGHT,
-                        0
-                    )
-
-                val registrationText =
-                    when (registrationStatus) {
-                        "registered" ->
-                            "Registered"
-
-                        "requested",
-                        "pending" ->
-                            "Request Terkirim / Menunggu Approval"
-
-                        else ->
-                            "Belum Registered"
-                    }
-
-                val captureText =
-                    if (active) {
-                        "Aktif
-${width} × ${height}"
-                    } else {
-                        "Belum aktif"
-                    }
-
-                status.text =
-                    "Status 1 — Registration: $registrationText
-
-" +
-                    "Status 2 — Screen Capture: $captureText"
-
-                captureButton.text =
-                    if (active) {
-                        "Hentikan screen capture"
-                    } else {
-                        "Izinkan akses layar"
-                    }
-
-                registerButton.text =
-                    when (registrationStatus) {
-                        "registered" ->
-                            "Sudah Registered"
-
-                        "requested",
-                        "pending" ->
-                            "Request Terkirim"
-
-                        else ->
-                            "Request Register"
-                    }
-
-                handler.postDelayed(
-                    this,
-                    1000
-                )
-            }
-        }
-
-    override fun onCreate(
-        savedInstanceState: Bundle?
-    ) {
-
-        super.onCreate(
-            savedInstanceState
-        )
-
-        // =========================
-        // WEBSOCKET
-        // =========================
-
-        android.util.Log.d(
-            "WebPhoneAgent",
-            "Membuat WebSocketClientManager"
-        )
-
-        webSocket =
-            WebSocketClientManager(this)
-
-        android.util.Log.d(
-            "WebPhoneAgent",
-            "Memanggil webSocket.connect()"
-        )
-
-        webSocket.connect()
-
-        // =========================
-        // WEBRTC / CLOUDFLARE
-        // =========================
-
-        android.util.Log.d(
-            "WebPhoneAgent",
-            "Membuat RealtimeManager"
-        )
-
-        realtimeManager =
-            RealtimeManager(this)
-
-        android.util.Log.d(
-            "WebPhoneAgent",
-            "Memanggil realtimeManager.initialize()"
-        )
-
-        realtimeManager.initialize()
-
-        // =========================
-        // KEEP SCREEN ON
-        // =========================
-
-        window.addFlags(
-            WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON
-        )
-
-        // =========================
-        // UI
-        // =========================
-
-        val root =
-            LinearLayout(this).apply {
-
-                orientation =
-                    LinearLayout.VERTICAL
-
-                gravity =
-                    Gravity.TOP
-
-                setPadding(
-                    32,
-                    48,
-                    32,
-                    32
-                )
-            }
-
-        val title =
-            TextView(this).apply {
-
-                text =
-                    "Web Phone Agent"
-
-                textSize =
-                    24f
-            }
-
-        status =
-            TextView(this).apply {
-
-                text =
-                    "Status: Menunggu izin screen capture"
-
-                textSize =
-                    16f
-
-                setPadding(
-                    0,
-                    32,
-                    0,
-                    32
-                )
-            }
-
-        brightnessButton =
-            Button(this).apply {
-
-                text =
-                    "Izinkan kontrol brightness"
-
-                setOnClickListener {
-
-                    openWriteSettingsPermission()
-                }
-            }
-
-        registerButton =
-            Button(this).apply {
-
-                text =
-                    "Request Register"
-
-                setOnClickListener {
-                    requestRegistration()
-                }
-            }
-
-        captureButton =
-            Button(this).apply {
-
-                text =
-                    "Izinkan akses layar"
-
-                setOnClickListener {
-
+                val data =
                     if (
-                        prefs.getBoolean(
-                            ScreenCaptureService.KEY_ACTIVE,
+                        Build.VERSION.SDK_INT >= 33
+                    ) {
+
+                        intent.getParcelableExtra(
+                            EXTRA_RESULT_DATA,
+                            Intent::class.java
+                        )
+
+                    } else {
+
+                        @Suppress("DEPRECATION")
+                        intent.getParcelableExtra(
+                            EXTRA_RESULT_DATA
+                        )
+                    }
+
+                if (
+                    resultCode !=
+                    Activity.RESULT_OK ||
+                    data == null
+                ) {
+
+                    Log.e(
+                        TAG,
+                        "Data MediaProjection tidak valid"
+                    )
+
+                    prefs.edit()
+                        .putBoolean(
+                            KEY_ACTIVE,
                             false
                         )
-                    ) {
+                        .apply()
 
-                        android.util.Log.d(
-                            "WebPhoneAgent",
-                            "Menghentikan screen capture"
-                        )
+                    stopForegroundCompat()
+                    stopSelf()
 
-                        val stopIntent =
-                            Intent(
-                                this@MainActivity,
-                                ScreenCaptureService::class.java
-                            ).apply {
-
-                                action =
-                                    ScreenCaptureService.ACTION_STOP
-                            }
-
-                        startService(
-                            stopIntent
-                        )
-
-                    } else {
-
-                        android.util.Log.d(
-                            "WebPhoneAgent",
-                            "Meminta izin screen capture"
-                        )
-
-                        requestScreenCapturePermission()
-                    }
-                }
-            }
-
-        root.addView(title)
-
-        root.addView(status)
-
-        root.addView(brightnessButton)
-
-        root.addView(registerButton)
-
-        root.addView(captureButton)
-
-        setContentView(root)
-
-        handler.post(
-            statusPoll
-        )
-
-        handler.post(
-            registrationPoll
-        )
-    }
-
-    private fun requestRegistration() {
-
-        registerButton.isEnabled =
-            false
-
-        registerButton.text =
-            "Mengirim request..."
-
-        Thread {
-
-            try {
-
-                val deviceId =
-                    Settings.Secure.getString(
-                        contentResolver,
-                        Settings.Secure.ANDROID_ID
-                    )
-
-                val body =
-                    JSONObject().apply {
-                        put(
-                            "deviceId",
-                            deviceId
-                        )
-                        put(
-                            "name",
-                            "Web Phone Agent"
-                        )
-                        put(
-                            "model",
-                            Build.MODEL
-                        )
-                    }.toString()
-
-                val connection =
-                    URL(
-                        "https://web-phone-oneforall.danip4848.workers.dev/api/registration/request"
-                    )
-                        .openConnection()
-                        as HttpURLConnection
-
-                connection.requestMethod =
-                    "POST"
-
-                connection.setRequestProperty(
-                    "Content-Type",
-                    "application/json"
-                )
-
-                connection.setRequestProperty(
-                    "Accept",
-                    "application/json"
-                )
-
-                connection.connectTimeout =
-                    15000
-
-                connection.readTimeout =
-                    15000
-
-                connection.doOutput =
-                    true
-
-                connection.outputStream.use {
-                    it.write(
-                        body.toByteArray(
-                            Charsets.UTF_8
-                        )
-                    )
+                    return START_NOT_STICKY
                 }
 
-                val responseCode =
-                    connection.responseCode
-
-                val responseText =
-                    if (
-                        responseCode in 200..299
-                    ) {
-                        connection.inputStream
-                            .bufferedReader()
-                            .use {
-                                it.readText()
-                            }
-                    } else {
-                        connection.errorStream
-                            ?.bufferedReader()
-                            ?.use {
-                                it.readText()
-                            }
-                            ?: "HTTP $responseCode"
-                    }
-
-                val response =
-                    JSONObject(
-                        responseText
-                    )
-
-                val ok =
-                    response.optBoolean(
-                        "ok",
-                        false
-                    )
-
-                if (ok) {
-                    registrationStatus =
-                        response.optString(
-                            "registrationStatus",
-                            "requested"
-                        )
-                }
-
-                android.util.Log.d(
-                    "WebPhoneAgent",
-                    "Registration response: $responseText"
-                )
-
-                runOnUiThread {
-                    registerButton.isEnabled =
-                        true
-                }
-
-                connection.disconnect()
-
-            } catch (error: Exception) {
-
-                android.util.Log.e(
-                    "WebPhoneAgent",
-                    "Gagal Request Register",
-                    error
-                )
-
-                runOnUiThread {
-                    registerButton.isEnabled =
-                        true
-                }
-            }
-
-        }.start()
-    }
-
-    private fun refreshRegistrationStatus() {
-
-        Thread {
-
-            try {
-
-                val deviceId =
-                    Settings.Secure.getString(
-                        contentResolver,
-                        Settings.Secure.ANDROID_ID
-                    )
-
-                if (
-                    deviceId.isNullOrBlank()
-                ) {
-                    return@Thread
-                }
-
-                val url =
-                    "https://web-phone-oneforall.danip4848.workers.dev/api/registration/status" +
-                    "?deviceId=" +
-                    Uri.encode(
-                        deviceId
-                    )
-
-                val connection =
-                    URL(url)
-                        .openConnection()
-                        as HttpURLConnection
-
-                connection.requestMethod =
-                    "GET"
-
-                connection.setRequestProperty(
-                    "Accept",
-                    "application/json"
-                )
-
-                connection.connectTimeout =
-                    10000
-
-                connection.readTimeout =
-                    10000
-
-                val responseCode =
-                    connection.responseCode
-
-                if (
-                    responseCode !in 200..299
-                ) {
-                    connection.disconnect()
-                    return@Thread
-                }
-
-                val responseText =
-                    connection.inputStream
-                        .bufferedReader()
-                        .use {
-                            it.readText()
-                        }
-
-                val response =
-                    JSONObject(
-                        responseText
-                    )
-
-                registrationStatus =
-                    response.optString(
-                        "registrationStatus",
-                        "unregistered"
-                    )
-
-                connection.disconnect()
-
-            } catch (error: Exception) {
-
-                android.util.Log.d(
-                    "WebPhoneAgent",
-                    "Registration status poll gagal: ${error.message}"
-                )
-            }
-
-        }.start()
-    }
-
-
-    private fun openWriteSettingsPermission() {
-
-        if (
-            Build.VERSION.SDK_INT >=
-            Build.VERSION_CODES.M
-        ) {
-
-            val intent =
-                Intent(
-                    Settings.ACTION_MANAGE_WRITE_SETTINGS
-                ).apply {
-
-                    data =
-                        Uri.parse(
-                            "package:$packageName"
-                        )
-                }
-
-            startActivity(intent)
-        }
-    }
-
-    private fun requestScreenCapturePermission() {
-
-        val manager =
-            getSystemService(
-                MediaProjectionManager::class.java
-            )
-
-        startActivityForResult(
-            manager.createScreenCaptureIntent(),
-            captureRequestCode
-        )
-    }
-
-    @Deprecated(
-        "Deprecated in Android API, kept for compatibility"
-    )
-    override fun onActivityResult(
-        requestCode: Int,
-        resultCode: Int,
-        data: Intent?
-    ) {
-
-        super.onActivityResult(
-            requestCode,
-            resultCode,
-            data
-        )
-
-        if (
-            requestCode != captureRequestCode
-        ) {
-            return
-        }
-
-        if (
-            resultCode != RESULT_OK ||
-            data == null
-        ) {
-
-            status.text =
-                "Status: Izin screen capture ditolak"
-
-            android.util.Log.e(
-                "WebPhoneAgent",
-                "Izin screen capture ditolak"
-            )
-
-            return
-        }
-
-        // =========================
-        // SCREEN CAPTURE SERVICE
-        // =========================
-
-        android.util.Log.d(
-            "WebPhoneAgent",
-            "Menjalankan ScreenCaptureService"
-        )
-
-        val serviceIntent =
-            Intent(
-                this,
-                ScreenCaptureService::class.java
-            ).apply {
-
-                action =
-                    ScreenCaptureService.ACTION_START
-
-                putExtra(
-                    ScreenCaptureService.EXTRA_RESULT_CODE,
-                    resultCode
-                )
-
-                putExtra(
-                    ScreenCaptureService.EXTRA_RESULT_DATA,
+                startCapture(
+                    resultCode,
                     data
                 )
             }
+        }
+
+        return START_STICKY
+    }
+
+    // =========================
+    // FOREGROUND SERVICE
+    // =========================
+
+    private fun startForegroundWithNotification() {
+
+        val notification =
+            buildNotification()
 
         if (
-            Build.VERSION.SDK_INT >=
-            Build.VERSION_CODES.O
+            Build.VERSION.SDK_INT >= 29
         ) {
 
-            startForegroundService(
-                serviceIntent
+            Log.d(
+                TAG,
+                "Memulai foreground service MEDIA_PROJECTION"
+            )
+
+            startForeground(
+                NOTIFICATION_ID,
+                notification,
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION
             )
 
         } else {
 
-            startService(
-                serviceIntent
+            startForeground(
+                NOTIFICATION_ID,
+                notification
+            )
+        }
+    }
+
+    // =========================
+    // START CAPTURE
+    // =========================
+
+    private fun startCapture(
+        resultCode: Int,
+        data: Intent
+    ) {
+
+        if (
+            realtimeManager != null &&
+            realtimeManager?.isCapturing() == true
+        ) {
+
+            Log.d(
+                TAG,
+                "Screen capture sudah aktif"
+            )
+
+            return
+        }
+
+        Log.d(
+            TAG,
+            "Menyiapkan screen capture"
+        )
+
+        try {
+
+            // =========================
+            // DISPLAY INFO
+            // =========================
+
+            val metrics =
+                resources.displayMetrics
+
+            val width =
+                metrics.widthPixels
+
+            val height =
+                metrics.heightPixels
+
+            Log.d(
+                TAG,
+                "Display: ${width}x${height}"
+            )
+
+            prefs.edit()
+                .putInt(
+                    KEY_WIDTH,
+                    width
+                )
+                .putInt(
+                    KEY_HEIGHT,
+                    height
+                )
+                .apply()
+
+            // =========================
+            // CPU WAKE LOCK
+            // =========================
+
+            acquireScreenWakeLock()
+
+            // =========================
+            // REALTIME MANAGER
+            // =========================
+
+            Log.d(
+                TAG,
+                "Membuat RealtimeManager"
+            )
+
+            val manager =
+                RealtimeManager(
+                    applicationContext
+                )
+
+            realtimeManager =
+                manager
+
+            // =========================
+            // INITIALIZE WEBRTC
+            // =========================
+
+            Log.d(
+                TAG,
+                "Inisialisasi WebRTC"
+            )
+
+            manager.initialize()
+
+            // =========================
+            // START WEBRTC CAPTURE
+            // =========================
+
+            Log.d(
+                TAG,
+                "Memulai WebRTC screen capture"
+            )
+
+            manager.startScreenCapture(
+                resultCode,
+                data
+            )
+
+            // =========================
+            // PEER CONNECTION
+            // =========================
+
+            Log.d(
+                TAG,
+                "Membuat PeerConnection"
+            )
+
+            manager.createPeerConnection()
+
+            // =========================
+            // CHECK CAPTURE
+            // =========================
+
+            if (
+                !manager.isCapturing()
+            ) {
+
+                Log.e(
+                    TAG,
+                    "WebRTC screen capture gagal aktif"
+                )
+
+                prefs.edit()
+                    .putBoolean(
+                        KEY_ACTIVE,
+                        false
+                    )
+                    .apply()
+
+                cleanupCapture()
+                stopForegroundCompat()
+                stopSelf()
+
+                return
+            }
+
+            // =========================
+            // SCREEN CAPTURE AKTIF
+            // =========================
+
+            prefs.edit()
+                .putBoolean(
+                    KEY_ACTIVE,
+                    true
+                )
+                .putLong(
+                    KEY_LAST_FRAME_AT,
+                    System.currentTimeMillis()
+                )
+                .apply()
+
+            Log.d(
+                TAG,
+                "WebRTC screen capture AKTIF"
+            )
+
+            // =========================
+            // CLOUDFLARE PUBLISH
+            // =========================
+
+            startCloudflarePublishing(
+                manager
+            )
+
+        } catch (e: SecurityException) {
+
+            Log.e(
+                TAG,
+                "SecurityException saat memulai WebRTC capture",
+                e
+            )
+
+            prefs.edit()
+                .putBoolean(
+                    KEY_ACTIVE,
+                    false
+                )
+                .apply()
+
+            cleanupCapture()
+            stopForegroundCompat()
+            stopSelf()
+
+        } catch (e: Exception) {
+
+            Log.e(
+                TAG,
+                "Gagal memulai screen capture",
+                e
+            )
+
+            prefs.edit()
+                .putBoolean(
+                    KEY_ACTIVE,
+                    false
+                )
+                .apply()
+
+            cleanupCapture()
+            stopForegroundCompat()
+            stopSelf()
+        }
+    }
+
+    // =========================
+    // CLOUDFLARE PUBLISH FLOW
+    // =========================
+
+    private fun startCloudflarePublishing(
+        manager: RealtimeManager
+    ) {
+
+        // =========================
+        // DEVICE ID
+        // =========================
+
+        val deviceId =
+            Settings.Secure.getString(
+                contentResolver,
+                Settings.Secure.ANDROID_ID
+            )
+
+        if (
+            deviceId.isNullOrBlank()
+        ) {
+
+            Log.e(
+                TAG,
+                "ANDROID_ID tidak tersedia"
+            )
+
+            return
+        }
+
+        Log.d(
+            TAG,
+            "Device ID: $deviceId"
+        )
+
+        // =========================
+        // CREATE SESSION
+        // =========================
+
+        Log.d(
+            TAG,
+            "Membuat Cloudflare session"
+        )
+
+        manager.createCloudflareSession {
+                success,
+                sessionId,
+                error ->
+
+            if (
+                !success ||
+                sessionId.isNullOrBlank()
+            ) {
+
+                Log.e(
+                    TAG,
+                    "Gagal membuat Cloudflare session: $error"
+                )
+
+                return@createCloudflareSession
+            }
+
+            Log.d(
+                TAG,
+                "Cloudflare session berhasil: $sessionId"
+            )
+
+            // =========================
+            // PUBLISH SCREEN
+            // =========================
+
+            Log.d(
+                TAG,
+                "Mengirim screen ke Cloudflare"
+            )
+
+            manager.publishToCloudflare(
+                sessionId,
+                deviceId
+            ) {
+                publishSuccess,
+                answer,
+                publishError ->
+
+                if (
+                    publishSuccess
+                ) {
+
+                    Log.d(
+                        TAG,
+                        "================================="
+                    )
+
+                    Log.d(
+                        TAG,
+                        "SCREEN BERHASIL DIPUBLISH"
+                    )
+
+                    Log.d(
+                        TAG,
+                        "Device ID: $deviceId"
+                    )
+
+                    Log.d(
+                        TAG,
+                        "Session ID: $sessionId"
+                    )
+
+                    Log.d(
+                        TAG,
+                        "Cloudflare answer berhasil"
+                    )
+
+                    Log.d(
+                        TAG,
+                        "================================="
+                    )
+
+                } else {
+
+                    Log.e(
+                        TAG,
+                        "Publish Cloudflare gagal: $publishError"
+                    )
+                }
+            }
+        }
+    }
+
+    // =========================
+    // STOP CAPTURE
+    // =========================
+
+    private fun stopCapture() {
+
+        Log.d(
+            TAG,
+            "Menghentikan screen capture"
+        )
+
+        prefs.edit()
+            .putBoolean(
+                KEY_ACTIVE,
+                false
+            )
+            .apply()
+
+        cleanupCapture()
+
+        stopForegroundCompat()
+
+        stopSelf()
+    }
+
+    // =========================
+    // CLEANUP
+    // =========================
+
+    private fun cleanupCapture() {
+
+        Log.d(
+            TAG,
+            "Cleanup capture"
+        )
+
+        try {
+
+            realtimeManager?.stopScreenCapture()
+
+        } catch (e: Exception) {
+
+            Log.e(
+                TAG,
+                "Gagal stop WebRTC capture",
+                e
             )
         }
 
-        /*
-         * PENTING:
-         *
-         * Jangan memanggil:
-         *
-         * realtimeManager.startScreenCapture(...)
-         *
-         * dari Activity.
-         *
-         * ScreenCaptureService akan menangani
-         * MediaProjection setelah foreground
-         * service MEDIA_PROJECTION aktif.
-         */
+        try {
 
-        status.text =
-            "Status: Memulai screen capture..."
+            realtimeManager?.dispose()
+
+        } catch (e: Exception) {
+
+            Log.e(
+                TAG,
+                "Gagal dispose RealtimeManager",
+                e
+            )
+        }
+
+        realtimeManager =
+            null
+
+        releaseWakeLock()
     }
+
+    // =========================
+    // WAKE LOCK
+    // =========================
+
+    private fun acquireScreenWakeLock() {
+
+        if (
+            wakeLock?.isHeld == true
+        ) {
+
+            return
+        }
+
+        try {
+
+            val powerManager =
+                getSystemService(
+                    PowerManager::class.java
+                )
+
+            wakeLock =
+                powerManager.newWakeLock(
+                    PowerManager.PARTIAL_WAKE_LOCK,
+                    "WebPhoneAgent::CaptureWakeLock"
+                )
+
+            wakeLock?.setReferenceCounted(
+                false
+            )
+
+            wakeLock?.acquire()
+
+            Log.d(
+                TAG,
+                "PARTIAL_WAKE_LOCK aktif"
+            )
+
+        } catch (e: Exception) {
+
+            Log.e(
+                TAG,
+                "Gagal membuat WakeLock",
+                e
+            )
+        }
+    }
+
+    private fun releaseWakeLock() {
+
+        try {
+
+            wakeLock?.let {
+
+                if (
+                    it.isHeld
+                ) {
+
+                    it.release()
+                }
+            }
+
+        } catch (_: Exception) {
+        }
+
+        wakeLock =
+            null
+    }
+
+    // =========================
+    // NOTIFICATION CHANNEL
+    // =========================
+
+    private fun createNotificationChannel() {
+
+        if (
+            Build.VERSION.SDK_INT < 26
+        ) {
+
+            return
+        }
+
+        val manager =
+            getSystemService(
+                NotificationManager::class.java
+            )
+
+        val channel =
+            NotificationChannel(
+                CHANNEL_ID,
+                "Web Phone Agent",
+                NotificationManager.IMPORTANCE_LOW
+            )
+
+        channel.description =
+            "Screen capture Web Phone Agent"
+
+        manager.createNotificationChannel(
+            channel
+        )
+    }
+
+    // =========================
+    // NOTIFICATION
+    // =========================
+
+    private fun buildNotification(): Notification {
+
+        val openIntent =
+            Intent(
+                this,
+                MainActivity::class.java
+            )
+
+        val flags =
+            PendingIntent.FLAG_UPDATE_CURRENT or
+                if (
+                    Build.VERSION.SDK_INT >= 23
+                ) {
+
+                    PendingIntent.FLAG_IMMUTABLE
+
+                } else {
+
+                    0
+                }
+
+        val pendingIntent =
+            PendingIntent.getActivity(
+                this,
+                0,
+                openIntent,
+                flags
+            )
+
+        val builder =
+            if (
+                Build.VERSION.SDK_INT >= 26
+            ) {
+
+                Notification.Builder(
+                    this,
+                    CHANNEL_ID
+                )
+
+            } else {
+
+                Notification.Builder(
+                    this
+                )
+            }
+
+        return builder
+            .setSmallIcon(
+                android.R.drawable.ic_menu_view
+            )
+            .setContentTitle(
+                "Web Phone Agent"
+            )
+            .setContentText(
+                "Screen capture aktif"
+            )
+            .setOngoing(
+                true
+            )
+            .setContentIntent(
+                pendingIntent
+            )
+            .build()
+    }
+
+    // =========================
+    // STOP FOREGROUND
+    // =========================
+
+    private fun stopForegroundCompat() {
+
+        if (
+            Build.VERSION.SDK_INT >= 24
+        ) {
+
+            stopForeground(
+                STOP_FOREGROUND_REMOVE
+            )
+
+        } else {
+
+            @Suppress("DEPRECATION")
+            stopForeground(
+                true
+            )
+        }
+    }
+
+    // =========================
+    // DESTROY
+    // =========================
 
     override fun onDestroy() {
 
-        handler.removeCallbacks(
-            statusPoll
+        Log.d(
+            TAG,
+            "ScreenCaptureService dihancurkan"
         )
 
-        handler.removeCallbacks(
-            registrationPoll
-        )
+        cleanupCapture()
 
-        // =========================
-        // WEBSOCKET
-        // =========================
-
-        webSocket.disconnect()
-
-        // =========================
-        // WEBRTC
-        // =========================
-
-        realtimeManager.dispose()
+        prefs.edit()
+            .putBoolean(
+                KEY_ACTIVE,
+                false
+            )
+            .apply()
 
         super.onDestroy()
+    }
+
+    // =========================
+    // NOT BOUND
+    // =========================
+
+    override fun onBind(
+        intent: Intent?
+    ): IBinder? {
+
+        return null
     }
 }
