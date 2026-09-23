@@ -3,6 +3,8 @@ package com.wpconvert.phoneagent
 import android.content.Context
 import android.content.Intent
 import android.media.projection.MediaProjection
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
 import org.json.JSONObject
 import org.webrtc.IceCandidate
@@ -699,9 +701,46 @@ class RealtimeManager(
                                     "Local SDP berhasil diset"
                                 )
 
-                                callback(
-                                    description
-                                )
+                                /*
+                                 * PENTING:
+                                 *
+                                 * Jangan langsung mengirim SDP hasil
+                                 * createOffer().
+                                 *
+                                 * Cloudflare Worker menerima SDP sebagai
+                                 * satu paket, jadi ICE candidate harus sudah
+                                 * terkumpul di localDescription terlebih dahulu.
+                                 */
+                                waitForIceGatheringComplete(
+                                    connection
+                                ) { finalDescription ->
+
+                                    if (finalDescription == null) {
+
+                                        Log.e(
+                                            TAG,
+                                            "Local SDP final tidak tersedia setelah ICE gathering"
+                                        )
+
+                                        callback(null)
+
+                                        return@waitForIceGatheringComplete
+                                    }
+
+                                    Log.d(
+                                        TAG,
+                                        "ICE gathering selesai"
+                                    )
+
+                                    Log.d(
+                                        TAG,
+                                        "Mengirim SDP final yang sudah berisi ICE candidate"
+                                    )
+
+                                    callback(
+                                        finalDescription
+                                    )
+                                }
                             }
 
                             override fun onCreateFailure(
@@ -753,6 +792,114 @@ class RealtimeManager(
                 }
             },
             constraints
+        )
+    }
+
+    // =====================================================
+    // WAIT ICE GATHERING COMPLETE
+    // =====================================================
+
+    private fun waitForIceGatheringComplete(
+        connection: PeerConnection,
+        callback:
+            (SessionDescription?) -> Unit
+    ) {
+
+        /*
+         * Jika ICE sudah selesai sebelum fungsi ini dipanggil,
+         * langsung ambil localDescription terbaru.
+         */
+        if (
+            connection.iceGatheringState ==
+                PeerConnection.IceGatheringState.COMPLETE
+        ) {
+
+            Log.d(
+                TAG,
+                "ICE gathering sudah COMPLETE"
+            )
+
+            callback(
+                connection.localDescription
+            )
+
+            return
+        }
+
+        val handler =
+            Handler(
+                Looper.getMainLooper()
+            )
+
+        val startTime =
+            System.currentTimeMillis()
+
+        val timeoutMs =
+            10000L
+
+        val checkRunnable =
+            object : Runnable {
+
+                override fun run() {
+
+                    val state =
+                        connection.iceGatheringState
+
+                    val localDescription =
+                        connection.localDescription
+
+                    if (
+                        state ==
+                            PeerConnection.IceGatheringState.COMPLETE
+                    ) {
+
+                        Log.d(
+                            TAG,
+                            "ICE gathering COMPLETE"
+                        )
+
+                        callback(
+                            localDescription
+                        )
+
+                        return
+                    }
+
+                    val elapsed =
+                        System.currentTimeMillis() -
+                            startTime
+
+                    if (
+                        elapsed >= timeoutMs
+                    ) {
+
+                        Log.w(
+                            TAG,
+                            "ICE gathering timeout setelah ${timeoutMs}ms"
+                        )
+
+                        /*
+                         * Tetap gunakan localDescription terbaru jika
+                         * tersedia. Ini mencegah aplikasi menggantung
+                         * selamanya jika ICE gathering tidak mencapai
+                         * COMPLETE pada device/network tertentu.
+                         */
+                        callback(
+                            localDescription
+                        )
+
+                        return
+                    }
+
+                    handler.postDelayed(
+                        this,
+                        50L
+                    )
+                }
+            }
+
+        handler.post(
+            checkRunnable
         )
     }
 
