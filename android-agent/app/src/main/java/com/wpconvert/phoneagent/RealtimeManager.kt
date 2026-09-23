@@ -287,7 +287,7 @@ class RealtimeManager(
             // =================================================
 
             val capturerObserver =
-                object : VideoCapturer.CapturerObserver {
+                object : org.webrtc.CapturerObserver {
 
                     private var frameCount = 0L
 
