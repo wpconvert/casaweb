@@ -5,23 +5,21 @@ import android.content.Intent
 import android.media.projection.MediaProjection
 import android.util.Log
 import org.json.JSONObject
-import org.webrtc.CandidatePairChangeEvent
 import org.webrtc.DataChannel
 import org.webrtc.IceCandidate
 import org.webrtc.MediaConstraints
 import org.webrtc.PeerConnection
 import org.webrtc.PeerConnectionFactory
 import org.webrtc.ScreenCapturerAndroid
-import org.webrtc.SdpObserver
 import org.webrtc.SessionDescription
 import org.webrtc.SurfaceTextureHelper
-import org.webrtc.VideoCapturer
-import org.webrtc.VideoFrame
 import org.webrtc.VideoSource
 import org.webrtc.VideoTrack
 import java.net.HttpURLConnection
 import java.net.URL
 import java.nio.ByteBuffer
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import kotlin.concurrent.thread
 
 class RealtimeManager(
@@ -29,155 +27,82 @@ class RealtimeManager(
 ) {
 
     companion object {
-
-        private const val TAG =
-            "RealtimeManager"
-
-        private const val WORKER_URL =
+        private const val TAG = "RealtimeManager"
+        private const val WORKER =
             "https://web-phone-oneforall.danip4848.workers.dev"
 
-        private const val CONTROL_CHANNEL_NAME =
-            "controls"
-
-        private const val SERVER_EVENTS_CHANNEL_NAME =
-            "server-events"
-
-        private const val CONTROL_CHANNEL_ID_UNKNOWN =
-            -1
+        private const val CONTROL = "controls"
+        private const val TRANSPORT = "server-events"
     }
 
     // =========================================================
     // WEBRTC
     // =========================================================
 
-    private var peerConnectionFactory:
-        PeerConnectionFactory? = null
+    private var factory: PeerConnectionFactory? = null
+    private var pc: PeerConnection? = null
 
-    private var peerConnection:
-        PeerConnection? = null
+    private var videoSource: VideoSource? = null
+    private var videoTrack: VideoTrack? = null
+    private var capturer: ScreenCapturerAndroid? = null
+    private var textureHelper: SurfaceTextureHelper? = null
 
-    private var videoSource:
-        VideoSource? = null
+    private var initialized = false
+    private var capturing = false
 
-    private var videoTrack:
-        VideoTrack? = null
-
-    private var surfaceTextureHelper:
-        SurfaceTextureHelper? = null
-
-    private var screenCapturer:
-        ScreenCapturerAndroid? = null
+    private var sessionId: String? = null
 
     // =========================================================
-    // STATE
+    // CONTROL
     // =========================================================
 
-    private var initialized =
-        false
-
-    private var capturing =
-        false
-
-    private var currentSessionId:
-        String? = null
-
-    // =========================================================
-    // CONTROL DATACHANNEL
-    // =========================================================
-
-    private var controlDataChannel:
-        DataChannel? = null
-
-    private var controlChannelId:
-        Int? = null
+    private var controlChannel: DataChannel? = null
+    private var controlChannelId: Int? = null
 
     @Volatile
-    private var controlChannelReady =
-        false
+    private var controlReady = false
 
     // =========================================================
     // INITIALIZE
     // =========================================================
 
     fun initialize() {
-
-        if (initialized) {
-            Log.d(
-                TAG,
-                "WebRTC sudah diinisialisasi"
-            )
-            return
-        }
-
-        Log.d(
-            TAG,
-            "Memulai inisialisasi WebRTC"
-        )
+        if (initialized) return
 
         try {
-
             PeerConnectionFactory.initialize(
-                PeerConnectionFactory
-                    .InitializationOptions
-                    .builder(
-                        context.applicationContext
-                    )
+                PeerConnectionFactory.InitializationOptions
+                    .builder(context.applicationContext)
                     .setEnableInternalTracer(false)
                     .createInitializationOptions()
             )
 
-            val eglBase =
-                org.webrtc.EglBase.create()
+            val egl = org.webrtc.EglBase.create()
 
-            val encoderFactory =
+            val encoder =
                 org.webrtc.DefaultVideoEncoderFactory(
-                    eglBase.eglBaseContext,
+                    egl.eglBaseContext,
                     true,
                     true
                 )
 
-            val decoderFactory =
+            val decoder =
                 org.webrtc.DefaultVideoDecoderFactory(
-                    eglBase.eglBaseContext
+                    egl.eglBaseContext
                 )
 
-            peerConnectionFactory =
-                PeerConnectionFactory
-                    .builder()
-                    .setVideoEncoderFactory(
-                        encoderFactory
-                    )
-                    .setVideoDecoderFactory(
-                        decoderFactory
-                    )
+            factory =
+                PeerConnectionFactory.builder()
+                    .setVideoEncoderFactory(encoder)
+                    .setVideoDecoderFactory(decoder)
                     .createPeerConnectionFactory()
 
-            initialized =
-                peerConnectionFactory != null
+            initialized = factory != null
 
-            if (initialized) {
-
-                Log.d(
-                    TAG,
-                    "WebRTC berhasil diinisialisasi"
-                )
-
-            } else {
-
-                Log.e(
-                    TAG,
-                    "PeerConnectionFactory = null"
-                )
-            }
+            Log.d(TAG, "WebRTC initialized=$initialized")
 
         } catch (e: Exception) {
-
-            Log.e(
-                TAG,
-                "Gagal inisialisasi WebRTC",
-                e
-            )
-
+            Log.e(TAG, "WebRTC initialize gagal", e)
             initialized = false
         }
     }
@@ -190,158 +115,65 @@ class RealtimeManager(
         resultCode: Int,
         projectionData: Intent
     ) {
+        if (!initialized) initialize()
+        if (capturing) return
 
-        if (!initialized) {
-            initialize()
-        }
-
-        if (capturing) {
-
-            Log.d(
-                TAG,
-                "Screen capture sudah aktif"
-            )
-
-            return
-        }
-
-        val factory =
-            peerConnectionFactory
-
-        if (factory == null) {
-
-            Log.e(
-                TAG,
-                "PeerConnectionFactory belum tersedia"
-            )
-
-            return
-        }
+        val f = factory ?: return
 
         try {
+            val egl = org.webrtc.EglBase.create()
 
-            Log.d(
-                TAG,
-                "Menyiapkan WebRTC screen capture"
-            )
-
-            val eglBase =
-                org.webrtc.EglBase.create()
-
-            surfaceTextureHelper =
+            textureHelper =
                 SurfaceTextureHelper.create(
-                    "ScreenCaptureThread",
-                    eglBase.eglBaseContext
+                    "ScreenCapture",
+                    egl.eglBaseContext
                 )
 
             videoSource =
-                factory.createVideoSource(true)
+                f.createVideoSource(true)
 
-            screenCapturer =
+            capturer =
                 ScreenCapturerAndroid(
                     projectionData,
                     object : MediaProjection.Callback() {
-
                         override fun onStop() {
-
-                            Log.d(
-                                TAG,
-                                "MediaProjection dihentikan Android"
-                            )
-
+                            Log.d(TAG, "MediaProjection stopped")
                             capturing = false
                         }
                     }
                 )
 
-            val capturer =
-                screenCapturer
+            val source = videoSource ?: return
+            val cap = capturer ?: return
+            val helper = textureHelper ?: return
 
-            val helper =
-                surfaceTextureHelper
-
-            val source =
-                videoSource
-
-            if (
-                capturer == null ||
-                helper == null ||
-                source == null
-            ) {
-
-                Log.e(
-                    TAG,
-                    "Komponen screen capture tidak lengkap"
-                )
-
-                stopScreenCapture()
-                return
-            }
-
-            val capturerObserver =
+            cap.initialize(
+                helper,
+                context.applicationContext,
                 object : org.webrtc.CapturerObserver {
 
-                    private var frameCount =
-                        0L
+                    private var frames = 0L
 
-                    override fun onCapturerStarted(
-                        success: Boolean
-                    ) {
-
+                    override fun onCapturerStarted(success: Boolean) {
                         Log.d(
                             TAG,
-                            "CapturerObserver.onCapturerStarted: $success"
+                            "Capturer started=$success"
                         )
                     }
 
                     override fun onCapturerStopped() {
-
-                        Log.d(
-                            TAG,
-                            "CapturerObserver.onCapturerStopped"
-                        )
+                        Log.d(TAG, "Capturer stopped")
                     }
 
                     override fun onFrameCaptured(
-                        frame: VideoFrame
+                        frame: org.webrtc.VideoFrame
                     ) {
+                        frames++
 
-                        frameCount++
-
-                        if (frameCount == 1L) {
-
+                        if (frames == 1L) {
                             Log.d(
                                 TAG,
-                                "========================================"
-                            )
-
-                            Log.d(
-                                TAG,
-                                "FRAME PERTAMA DITERIMA"
-                            )
-
-                            Log.d(
-                                TAG,
-                                "size=${frame.buffer.width}x${frame.buffer.height}"
-                            )
-
-                            Log.d(
-                                TAG,
-                                "rotation=${frame.rotation}"
-                            )
-
-                            Log.d(
-                                TAG,
-                                "========================================"
-                            )
-                        }
-
-                        if (frameCount % 30L == 0L) {
-
-                            Log.d(
-                                TAG,
-                                "FRAME #$frameCount " +
-                                    "${frame.buffer.width}x${frame.buffer.height}"
+                                "First frame ${frame.buffer.width}x${frame.buffer.height}"
                             )
                         }
 
@@ -349,11 +181,6 @@ class RealtimeManager(
                             .onFrameCaptured(frame)
                     }
                 }
-
-            capturer.initialize(
-                helper,
-                context.applicationContext,
-                capturerObserver
             )
 
             source.adaptOutputFormat(
@@ -362,19 +189,14 @@ class RealtimeManager(
                 30
             )
 
-            Log.d(
-                TAG,
-                "Memulai capture 720x1600 @ 30 FPS"
-            )
-
-            capturer.startCapture(
+            cap.startCapture(
                 720,
                 1600,
                 30
             )
 
             videoTrack =
-                factory.createVideoTrack(
+                f.createVideoTrack(
                     "screen-track",
                     source
                 )
@@ -385,27 +207,11 @@ class RealtimeManager(
 
             Log.d(
                 TAG,
-                "Screen capture berhasil dimulai"
+                "Screen capture aktif 720x1600@30"
             )
-
-        } catch (e: SecurityException) {
-
-            Log.e(
-                TAG,
-                "SecurityException saat memulai MediaProjection",
-                e
-            )
-
-            stopScreenCapture()
 
         } catch (e: Exception) {
-
-            Log.e(
-                TAG,
-                "Gagal memulai screen capture",
-                e
-            )
-
+            Log.e(TAG, "Screen capture gagal", e)
             stopScreenCapture()
         }
     }
@@ -415,37 +221,13 @@ class RealtimeManager(
     // =========================================================
 
     fun createPeerConnection() {
+        if (!initialized) initialize()
+        if (pc != null) return
 
-        if (!initialized) {
-            initialize()
-        }
-
-        if (peerConnection != null) {
-
-            Log.d(
-                TAG,
-                "PeerConnection sudah ada"
-            )
-
-            return
-        }
-
-        val factory =
-            peerConnectionFactory
-
-        if (factory == null) {
-
-            Log.e(
-                TAG,
-                "PeerConnectionFactory tidak tersedia"
-            )
-
-            return
-        }
+        val f = factory ?: return
 
         try {
-
-            val iceServers =
+            val ice =
                 listOf(
                     PeerConnection.IceServer
                         .builder(
@@ -454,125 +236,76 @@ class RealtimeManager(
                         .createIceServer()
                 )
 
-            val configuration =
-                PeerConnection.RTCConfiguration(
-                    iceServers
-                )
+            val config =
+                PeerConnection.RTCConfiguration(ice).apply {
+                    sdpSemantics =
+                        PeerConnection.SdpSemantics.UNIFIED_PLAN
+                }
 
-            configuration.sdpSemantics =
-                PeerConnection.SdpSemantics.UNIFIED_PLAN
-
-            peerConnection =
-                factory.createPeerConnection(
-                    configuration,
+            pc =
+                f.createPeerConnection(
+                    config,
                     object : PeerConnection.Observer {
 
                         override fun onSignalingChange(
                             state: PeerConnection.SignalingState
                         ) {
-
-                            Log.d(
-                                TAG,
-                                "Signaling state: $state"
-                            )
+                            Log.d(TAG, "Signaling=$state")
                         }
 
                         override fun onIceConnectionChange(
                             state: PeerConnection.IceConnectionState
                         ) {
-
-                            Log.d(
-                                TAG,
-                                "ICE connection state: $state"
-                            )
+                            Log.d(TAG, "ICE=$state")
                         }
 
                         override fun onIceConnectionReceivingChange(
                             receiving: Boolean
                         ) {
-
-                            Log.d(
-                                TAG,
-                                "ICE receiving: $receiving"
-                            )
                         }
 
                         override fun onIceGatheringChange(
                             state: PeerConnection.IceGatheringState
                         ) {
-
-                            Log.d(
-                                TAG,
-                                "ICE gathering state: $state"
-                            )
+                            Log.d(TAG, "ICE gathering=$state")
                         }
 
                         override fun onIceCandidate(
                             candidate: IceCandidate
                         ) {
-
-                            Log.d(
-                                TAG,
-                                "ICE candidate received"
-                            )
+                            Log.d(TAG, "ICE candidate")
                         }
 
                         override fun onIceCandidatesRemoved(
                             candidates: Array<out IceCandidate>
                         ) {
-
-                            Log.d(
-                                TAG,
-                                "ICE candidates removed"
-                            )
                         }
 
                         override fun onAddStream(
                             stream: org.webrtc.MediaStream
                         ) {
-
-                            Log.d(
-                                TAG,
-                                "Remote stream ditambahkan"
-                            )
                         }
 
                         override fun onRemoveStream(
                             stream: org.webrtc.MediaStream
                         ) {
-
-                            Log.d(
-                                TAG,
-                                "Remote stream dihapus"
-                            )
                         }
 
                         override fun onDataChannel(
-                            dataChannel: DataChannel
+                            channel: DataChannel
                         ) {
-
                             Log.d(
                                 TAG,
-                                "DataChannel diterima: " +
-                                    dataChannel.label()
+                                "DataChannel received=${channel.label()}"
                             )
 
-                            if (
-                                dataChannel.label() ==
-                                CONTROL_CHANNEL_NAME
-                            ) {
-                                attachControlDataChannel(
-                                    dataChannel
-                                )
+                            if (channel.label() == CONTROL) {
+                                attachControl(channel)
                             }
                         }
 
                         override fun onRenegotiationNeeded() {
-
-                            Log.d(
-                                TAG,
-                                "Renegotiation diperlukan"
-                            )
+                            Log.d(TAG, "Renegotiation needed")
                         }
 
                         override fun onAddTrack(
@@ -580,94 +313,49 @@ class RealtimeManager(
                             mediaStreams:
                                 Array<out org.webrtc.MediaStream>
                         ) {
-
-                            Log.d(
-                                TAG,
-                                "Track diterima"
-                            )
                         }
 
                         override fun onTrack(
-                            transceiver:
-                                org.webrtc.RtpTransceiver
+                            transceiver: org.webrtc.RtpTransceiver
                         ) {
-
-                            Log.d(
-                                TAG,
-                                "Transceiver track diterima"
-                            )
                         }
 
                         override fun onIceCandidateError(
                             event:
                                 org.webrtc.IceCandidateErrorEvent
                         ) {
-
                             Log.e(
                                 TAG,
-                                "ICE candidate error: " +
-                                    event.errorText
+                                "ICE error=${event.errorText}"
                             )
                         }
 
                         override fun onSelectedCandidatePairChanged(
-                            event: CandidatePairChangeEvent
+                            event:
+                                org.webrtc.CandidatePairChangeEvent
                         ) {
-
-                            Log.d(
-                                TAG,
-                                "Selected candidate pair berubah"
-                            )
                         }
 
                         override fun onConnectionChange(
-                            newState:
+                            state:
                                 PeerConnection.PeerConnectionState
                         ) {
-
-                            Log.d(
-                                TAG,
-                                "PeerConnection state: $newState"
-                            )
+                            Log.d(TAG, "PC=$state")
                         }
                     }
                 )
 
-            if (peerConnection == null) {
-
-                Log.e(
-                    TAG,
-                    "Gagal membuat PeerConnection"
-                )
-
-                return
-            }
-
-            Log.d(
-                TAG,
-                "PeerConnection berhasil dibuat"
-            )
-
-            videoTrack?.let { track ->
-
-                peerConnection?.addTrack(
-                    track,
+            videoTrack?.let {
+                pc?.addTrack(
+                    it,
                     listOf("screen-stream")
                 )
-
-                Log.d(
-                    TAG,
-                    "Screen video track ditambahkan"
-                )
             }
 
-        } catch (e: Exception) {
+            Log.d(TAG, "PeerConnection ready")
 
-            Log.e(
-                TAG,
-                "Gagal membuat PeerConnection",
-                e
-            )
+        } catch (e: Exception) {
+            Log.e(TAG, "PeerConnection gagal", e)
         }
     }
 
@@ -676,34 +364,21 @@ class RealtimeManager(
     // =========================================================
 
     fun createOffer(
-        callback:
-            (SessionDescription?) -> Unit
+        callback: (SessionDescription?) -> Unit
     ) {
-
-        val connection =
-            peerConnection
-
-        if (connection == null) {
-
-            Log.e(
-                TAG,
-                "PeerConnection belum dibuat"
-            )
-
+        val connection = pc ?: run {
             callback(null)
             return
         }
 
         val constraints =
             MediaConstraints().apply {
-
                 mandatory.add(
                     MediaConstraints.KeyValuePair(
                         "OfferToReceiveAudio",
                         "false"
                     )
                 )
-
                 mandatory.add(
                     MediaConstraints.KeyValuePair(
                         "OfferToReceiveVideo",
@@ -713,66 +388,39 @@ class RealtimeManager(
             }
 
         connection.createOffer(
-            object : SdpObserver {
+            object : org.webrtc.SdpObserver {
 
                 override fun onCreateSuccess(
                     description: SessionDescription
                 ) {
-
-                    Log.d(
-                        TAG,
-                        "SDP Offer berhasil dibuat"
-                    )
-
                     connection.setLocalDescription(
-                        object : SdpObserver {
-
-                            override fun onCreateSuccess(
-                                description:
-                                    SessionDescription
-                            ) {
-                            }
+                        object : org.webrtc.SdpObserver {
 
                             override fun onSetSuccess() {
-
-                                Log.d(
-                                    TAG,
-                                    "Local SDP berhasil diset"
+                                waitIce(connection)
+                                callback(
+                                    connection.localDescription
                                 )
+                            }
 
-                                waitForIceGathering {
-                                    val local =
-                                        connection.localDescription
-
-                                    if (local != null) {
-                                        callback(local)
-                                    } else {
-                                        callback(description)
-                                    }
-                                }
+                            override fun onCreateSuccess(
+                                description: SessionDescription
+                            ) {
                             }
 
                             override fun onCreateFailure(
                                 error: String
                             ) {
-
-                                Log.e(
-                                    TAG,
-                                    "Local SDP create failure: $error"
-                                )
-
                                 callback(null)
                             }
 
                             override fun onSetFailure(
                                 error: String
                             ) {
-
                                 Log.e(
                                     TAG,
-                                    "Local SDP set failure: $error"
+                                    "setLocal failed=$error"
                                 )
-
                                 callback(null)
                             }
                         },
@@ -780,130 +428,86 @@ class RealtimeManager(
                     )
                 }
 
-                override fun onSetSuccess() {
-                }
-
                 override fun onCreateFailure(
                     error: String
                 ) {
-
                     Log.e(
                         TAG,
-                        "Offer create failure: $error"
+                        "createOffer failed=$error"
                     )
-
                     callback(null)
                 }
 
-                override fun onSetFailure(
-                    error: String
-                ) {
-                }
+                override fun onSetSuccess() {}
+                override fun onSetFailure(error: String) {}
             },
             constraints
         )
     }
 
     // =========================================================
-    // CREATE CLOUDFLARE SESSION
+    // CLOUDFLARE SESSION
     // =========================================================
 
     fun createCloudflareSession(
         callback:
             (
-                success: Boolean,
-                sessionId: String?,
-                error: String?
+                Boolean,
+                String?,
+                String?
             ) -> Unit
     ) {
-
-        Log.d(
-            TAG,
-            "Meminta Cloudflare session baru"
-        )
-
         thread {
-
             try {
-
-                val response =
-                    httpRequest(
-                        method = "POST",
-                        path = "/api/session",
-                        body = "{}"
+                val result =
+                    request(
+                        "POST",
+                        "$WORKER/api/session",
+                        "{}"
                     )
-
-                Log.d(
-                    TAG,
-                    "Session response code: ${response.code}"
-                )
-
-                Log.d(
-                    TAG,
-                    "Session response: ${response.body}"
-                )
-
-                if (
-                    response.code !in 200..299
-                ) {
-
-                    callback(
-                        false,
-                        null,
-                        response.body
-                    )
-
-                    return@thread
-                }
 
                 val json =
-                    JSONObject(response.body)
+                    JSONObject(result)
 
-                val sessionId =
+                val id =
                     json.optString(
                         "sessionId",
                         ""
                     )
 
-                if (
-                    sessionId.isEmpty()
-                ) {
-
+                if (id.isBlank()) {
                     callback(
                         false,
                         null,
-                        "Cloudflare tidak mengembalikan sessionId"
+                        result
                     )
-
                     return@thread
                 }
 
-                currentSessionId =
-                    sessionId
+                sessionId = id
 
                 Log.d(
                     TAG,
-                    "Cloudflare session berhasil: $sessionId"
+                    "Session=$id"
                 )
 
                 callback(
                     true,
-                    sessionId,
+                    id,
                     null
                 )
 
             } catch (e: Exception) {
-
                 Log.e(
                     TAG,
-                    "Gagal membuat Cloudflare session",
+                    "Create session gagal",
                     e
                 )
 
                 callback(
                     false,
                     null,
-                    e.message ?: "Unknown error"
+                    e.message
                 )
             }
         }
@@ -914,77 +518,54 @@ class RealtimeManager(
     // =========================================================
 
     fun publishToCloudflare(
-        sessionId: String,
+        session: String,
         deviceId: String,
-        callback: (
-            success: Boolean,
-            answer: SessionDescription?,
-            error: String?
-        ) -> Unit
+        callback:
+            (
+                Boolean,
+                SessionDescription?,
+                String?
+            ) -> Unit
     ) {
-
-        val connection =
-            peerConnection
-
-        if (connection == null) {
-
+        val connection = pc ?: run {
             callback(
                 false,
                 null,
-                "PeerConnection belum dibuat"
+                "PeerConnection belum ada"
             )
-
             return
         }
 
-        currentSessionId =
-            sessionId
-
-        Log.d(
-            TAG,
-            "Publish ke Cloudflare dimulai"
-        )
+        sessionId = session
 
         createOffer { offer ->
 
             if (offer == null) {
-
                 callback(
                     false,
                     null,
-                    "Gagal membuat SDP offer"
+                    "Offer gagal"
                 )
-
                 return@createOffer
             }
 
             thread {
-
                 try {
-
                     val body =
                         JSONObject().apply {
-
                             put(
                                 "sessionId",
-                                sessionId
+                                session
                             )
-
                             put(
                                 "deviceId",
                                 deviceId
                             )
-
                             put(
                                 "sdp",
                                 offer.description
                             )
-
-                            put(
-                                "mid",
-                                "0"
-                            )
-
+                            put("mid", "0")
                             put(
                                 "trackName",
                                 "screen-$deviceId"
@@ -992,87 +573,54 @@ class RealtimeManager(
                         }
 
                     val response =
-                        httpRequest(
-                            method = "POST",
-                            path = "/api/publish",
-                            body = body.toString()
+                        request(
+                            "POST",
+                            "$WORKER/api/publish",
+                            body.toString()
                         )
-
-                    Log.d(
-                        TAG,
-                        "Cloudflare response code: ${response.code}"
-                    )
-
-                    Log.d(
-                        TAG,
-                        "Cloudflare response: ${response.body}"
-                    )
-
-                    if (
-                        response.code !in 200..299
-                    ) {
-
-                        callback(
-                            false,
-                            null,
-                            response.body
-                        )
-
-                        return@thread
-                    }
 
                     val json =
-                        JSONObject(response.body)
+                        JSONObject(response)
 
-                    val cloudflare =
+                    val cf =
                         json.optJSONObject(
                             "cloudflare"
                         )
 
-                    val sessionDescription =
-                        cloudflare?.optJSONObject(
+                    val desc =
+                        cf?.optJSONObject(
                             "sessionDescription"
                         )
 
-                    val answerSdp =
-                        sessionDescription?.optString(
+                    val sdp =
+                        desc?.optString(
                             "sdp",
                             ""
-                        ) ?: ""
+                        )
 
-                    if (
-                        answerSdp.isEmpty()
-                    ) {
-
+                    if (sdp.isNullOrBlank()) {
                         callback(
                             false,
                             null,
-                            "Cloudflare tidak mengembalikan SDP answer"
+                            response
                         )
-
                         return@thread
                     }
 
                     val answer =
                         SessionDescription(
                             SessionDescription.Type.ANSWER,
-                            answerSdp
+                            sdp
                         )
 
                     connection.setRemoteDescription(
-                        object : SdpObserver {
-
-                            override fun onCreateSuccess(
-                                description:
-                                    SessionDescription
-                            ) {
-                            }
+                        object : org.webrtc.SdpObserver {
 
                             override fun onSetSuccess() {
 
                                 Log.d(
                                     TAG,
-                                    "Remote SDP Cloudflare berhasil diset"
+                                    "Video publish connected"
                                 )
 
                                 callback(
@@ -1080,45 +628,46 @@ class RealtimeManager(
                                     answer,
                                     null
                                 )
-                            }
 
-                            override fun onCreateFailure(
-                                error: String
-                            ) {
-
-                                callback(
-                                    false,
-                                    null,
-                                    error
-                                )
+                                // Kontrol disiapkan setelah
+                                // video sudah aman.
+                                setupControlTransport()
                             }
 
                             override fun onSetFailure(
                                 error: String
                             ) {
-
                                 callback(
                                     false,
                                     null,
                                     error
                                 )
+                            }
+
+                            override fun onCreateSuccess(
+                                description: SessionDescription
+                            ) {
+                            }
+
+                            override fun onCreateFailure(
+                                error: String
+                            ) {
                             }
                         },
                         answer
                     )
 
                 } catch (e: Exception) {
-
                     Log.e(
                         TAG,
-                        "Gagal publish ke Cloudflare",
+                        "Publish gagal",
                         e
                     )
 
                     callback(
                         false,
                         null,
-                        e.message ?: "Unknown error"
+                        e.message
                     )
                 }
             }
@@ -1126,766 +675,338 @@ class RealtimeManager(
     }
 
     // =========================================================
-    // DATA CHANNEL - FULL CLOUDFLARE SETUP
+    // CONTROL TRANSPORT
     // =========================================================
 
-    /**
-     * Jalur:
-     *
-     * 1. /api/datachannel-establish
-     * 2. Cloudflare memberikan SDP offer baru
-     * 3. Android setRemoteDescription()
-     * 4. Android createAnswer()
-     * 5. Android setLocalDescription()
-     * 6. Tunggu ICE gathering
-     * 7. /api/renegotiate
-     * 8. /api/datachannel-publish
-     * 9. Ambil DataChannel ID
-     * 10. createDataChannel(... negotiated=true ...)
-     */
-    fun setupControlDataChannel(
-        callback:
-            ((Boolean, String?) -> Unit)? = null
-    ) {
-
-        val sessionId =
-            currentSessionId
-
-        val connection =
-            peerConnection
-
-        if (sessionId.isNullOrEmpty()) {
-
-            callback?.invoke(
-                false,
-                "Cloudflare sessionId belum tersedia"
-            )
-
-            return
-        }
-
-        if (connection == null) {
-
-            callback?.invoke(
-                false,
-                "PeerConnection belum tersedia"
-            )
-
-            return
-        }
+    private fun setupControlTransport() {
+        val sid = sessionId ?: return
+        val connection = pc ?: return
 
         thread {
-
             try {
-
                 Log.d(
                     TAG,
-                    "Memulai establish DataChannel transport"
+                    "Menyiapkan DataChannel transport..."
                 )
+
+                // -------------------------------------------------
+                // 1. ESTABLISH TRANSPORT
+                // -------------------------------------------------
 
                 val establishBody =
                     JSONObject().apply {
-
                         put(
                             "sessionId",
-                            sessionId
+                            sid
                         )
-
                         put(
                             "location",
                             "remote"
                         )
-
                         put(
                             "dataChannelName",
-                            SERVER_EVENTS_CHANNEL_NAME
+                            TRANSPORT
                         )
                     }
 
                 val establishResponse =
-                    httpRequest(
-                        method = "POST",
-                        path = "/api/datachannel-establish",
-                        body = establishBody.toString()
+                    request(
+                        "POST",
+                        "$WORKER/api/datachannel-establish",
+                        establishBody.toString()
                     )
-
-                Log.d(
-                    TAG,
-                    "DataChannel establish HTTP: " +
-                        establishResponse.code
-                )
-
-                Log.d(
-                    TAG,
-                    "DataChannel establish response: " +
-                        establishResponse.body
-                )
-
-                if (
-                    establishResponse.code !in 200..299
-                ) {
-
-                    callback?.invoke(
-                        false,
-                        establishResponse.body
-                    )
-
-                    return@thread
-                }
 
                 val establishJson =
                     JSONObject(
-                        establishResponse.body
+                        establishResponse
                     )
 
-                val sessionDescription =
-                    establishJson.optJSONObject(
-                        "sessionDescription"
-                    )
+                val transport =
+                    establishJson
+                        .optJSONObject(
+                            "sessionDescription"
+                        )
+                        ?: establishJson
+                            .optJSONObject(
+                                "cloudflare"
+                            )
+                            ?.optJSONObject(
+                                "sessionDescription"
+                            )
 
-                if (
-                    sessionDescription == null
-                ) {
-
-                    callback?.invoke(
-                        false,
-                        "Cloudflare tidak memberikan sessionDescription untuk DataChannel"
-                    )
-
-                    return@thread
-                }
-
-                val offerSdp =
-                    sessionDescription.optString(
+                val transportSdp =
+                    transport?.optString(
                         "sdp",
                         ""
                     )
 
                 if (
-                    offerSdp.isEmpty()
+                    transport == null ||
+                    transportSdp.isNullOrBlank()
                 ) {
-
-                    callback?.invoke(
-                        false,
-                        "SDP DataChannel offer kosong"
+                    throw Exception(
+                        "DataChannel establish SDP kosong: $establishResponse"
                     )
-
-                    return@thread
                 }
 
-                val dataChannelOffer =
+                val transportType =
+                    transport.optString(
+                        "type",
+                        "offer"
+                    )
+
+                val transportOffer =
                     SessionDescription(
-                        SessionDescription.Type.OFFER,
-                        offerSdp
-                    )
-
-                runOnPeerThread {
-
-                    connection.setRemoteDescription(
-                        object : SdpObserver {
-
-                            override fun onCreateSuccess(
-                                description:
-                                    SessionDescription
-                            ) {
-                            }
-
-                            override fun onSetSuccess() {
-
-                                Log.d(
-                                    TAG,
-                                    "DataChannel SFU offer berhasil diset"
-                                )
-
-                                createDataChannelAnswer(
-                                    connection
-                                ) { success, answer, error ->
-
-                                    if (!success || answer == null) {
-
-                                        callback?.invoke(
-                                            false,
-                                            error
-                                                ?: "Gagal membuat DataChannel answer"
-                                        )
-
-                                        return@createDataChannelAnswer
-                                    }
-
-                                    renegotiateDataChannel(
-                                        sessionId,
-                                        answer
-                                    ) { renegotiateSuccess, renegotiateError ->
-
-                                        if (!renegotiateSuccess) {
-
-                                            callback?.invoke(
-                                                false,
-                                                renegotiateError
-                                                    ?: "DataChannel renegotiate gagal"
-                                            )
-
-                                            return@renegotiateDataChannel
-                                        }
-
-                                        createPublisherControlChannel(
-                                            sessionId
-                                        ) { channelSuccess, channelId, channelError ->
-
-                                            if (!channelSuccess) {
-
-                                                callback?.invoke(
-                                                    false,
-                                                    channelError
-                                                        ?: "Gagal membuat controls DataChannel"
-                                                )
-
-                                                return@createPublisherControlChannel
-                                            }
-
-                                            if (
-                                                channelId == null
-                                            ) {
-
-                                                callback?.invoke(
-                                                    false,
-                                                    "Cloudflare tidak memberikan channel ID"
-                                                )
-
-                                                return@createPublisherControlChannel
-                                            }
-
-                                            createNegotiatedControlChannel(
-                                                channelId
-                                            ) { finalSuccess, finalError ->
-
-                                                callback?.invoke(
-                                                    finalSuccess,
-                                                    finalError
-                                                )
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-
-                            override fun onCreateFailure(
-                                error: String
-                            ) {
-
-                                callback?.invoke(
-                                    false,
-                                    error
-                                )
-                            }
-
-                            override fun onSetFailure(
-                                error: String
-                            ) {
-
-                                callback?.invoke(
-                                    false,
-                                    error
-                                )
-                            }
+                        if (
+                            transportType.equals(
+                                "answer",
+                                true
+                            )
+                        ) {
+                            SessionDescription.Type.ANSWER
+                        } else {
+                            SessionDescription.Type.OFFER
                         },
-                        dataChannelOffer
+                        transportSdp
+                    )
+
+                // -------------------------------------------------
+                // 2. APPLY CLOUDFLARE OFFER
+                // -------------------------------------------------
+
+                val remoteOk =
+                    setRemoteDescriptionSync(
+                        connection,
+                        transportOffer
+                    )
+
+                if (!remoteOk) {
+                    throw Exception(
+                        "Gagal set DataChannel remote SDP"
                     )
                 }
 
-            } catch (e: Exception) {
+                // -------------------------------------------------
+                // 3. CREATE ANSWER
+                // -------------------------------------------------
 
-                Log.e(
-                    TAG,
-                    "Gagal setup DataChannel",
-                    e
-                )
+                val answer =
+                    createAnswerSync(
+                        connection
+                    )
 
-                callback?.invoke(
-                    false,
-                    e.message ?: "Unknown error"
-                )
-            }
-        }
-    }
-
-    // =========================================================
-    // DATA CHANNEL - CREATE ANSWER
-    // =========================================================
-
-    private fun createDataChannelAnswer(
-        connection: PeerConnection,
-        callback:
-            (Boolean, SessionDescription?, String?) -> Unit
-    ) {
-
-        val constraints =
-            MediaConstraints()
-
-        connection.createAnswer(
-            object : SdpObserver {
-
-                override fun onCreateSuccess(
-                    answer: SessionDescription
-                ) {
-
-                    connection.setLocalDescription(
-                        object : SdpObserver {
-
-                            override fun onCreateSuccess(
-                                description:
-                                    SessionDescription
-                            ) {
-                            }
-
-                            override fun onSetSuccess() {
-
-                                Log.d(
-                                    TAG,
-                                    "DataChannel local answer berhasil diset"
-                                )
-
-                                waitForIceGathering {
-
-                                    val local =
-                                        connection.localDescription
-
-                                    if (local == null) {
-
-                                        callback(
-                                            false,
-                                            null,
-                                            "localDescription null setelah DataChannel answer"
-                                        )
-
-                                    } else {
-
-                                        callback(
-                                            true,
-                                            local,
-                                            null
-                                        )
-                                    }
-                                }
-                            }
-
-                            override fun onCreateFailure(
-                                error: String
-                            ) {
-
-                                callback(
-                                    false,
-                                    null,
-                                    error
-                                )
-                            }
-
-                            override fun onSetFailure(
-                                error: String
-                            ) {
-
-                                callback(
-                                    false,
-                                    null,
-                                    error
-                                )
-                            }
-                        },
-                        answer
+                if (answer == null) {
+                    throw Exception(
+                        "Gagal membuat DataChannel answer"
                     )
                 }
 
-                override fun onSetSuccess() {
-                }
+                waitIce(connection)
 
-                override fun onCreateFailure(
-                    error: String
-                ) {
+                val answerSdp =
+                    connection.localDescription
+                        ?.description
+                        ?: answer.description
 
-                    callback(
-                        false,
-                        null,
-                        error
-                    )
-                }
+                // -------------------------------------------------
+                // 4. RENEGOTIATE
+                // -------------------------------------------------
 
-                override fun onSetFailure(
-                    error: String
-                ) {
-                }
-            },
-            constraints
-        )
-    }
-
-    // =========================================================
-    // DATA CHANNEL - RENEGOTIATE
-    // =========================================================
-
-    private fun renegotiateDataChannel(
-        sessionId: String,
-        answer: SessionDescription,
-        callback:
-            (Boolean, String?) -> Unit
-    ) {
-
-        thread {
-
-            try {
-
-                val body =
+                val renegotiateBody =
                     JSONObject().apply {
-
                         put(
                             "sessionId",
-                            sessionId
+                            sid
                         )
-
                         put(
                             "sdp",
-                            answer.description
+                            answerSdp
                         )
                     }
 
-                val response =
-                    httpRequest(
-                        method = "PUT",
-                        path = "/api/renegotiate",
-                        body = body.toString()
-                    )
-
-                Log.d(
-                    TAG,
-                    "DataChannel renegotiate HTTP: " +
-                        response.code
+                request(
+                    "PUT",
+                    "$WORKER/api/renegotiate",
+                    renegotiateBody.toString()
                 )
 
                 Log.d(
                     TAG,
-                    "DataChannel renegotiate response: " +
-                        response.body
+                    "DataChannel transport renegotiated"
                 )
 
-                if (
-                    response.code !in 200..299
-                ) {
+                // -------------------------------------------------
+                // 5. CREATE APPLICATION CHANNEL ON PUBLISHER
+                // -------------------------------------------------
 
-                    callback(
-                        false,
-                        response.body
-                    )
-
-                    return@thread
-                }
-
-                callback(
-                    true,
-                    null
-                )
+                createControlChannel()
 
             } catch (e: Exception) {
-
-                callback(
-                    false,
-                    e.message ?: "Unknown error"
-                )
-            }
-        }
-    }
-
-    // =========================================================
-    // DATA CHANNEL - ALLOCATE CONTROLS
-    // =========================================================
-
-    private fun createPublisherControlChannel(
-        sessionId: String,
-        callback:
-            (Boolean, Int?, String?) -> Unit
-    ) {
-
-        thread {
-
-            try {
-
-                val body =
-                    JSONObject().apply {
-
-                        put(
-                            "sessionId",
-                            sessionId
-                        )
-
-                        put(
-                            "dataChannelName",
-                            CONTROL_CHANNEL_NAME
-                        )
-                    }
-
-                val response =
-                    httpRequest(
-                        method = "POST",
-                        path = "/api/datachannel-publish",
-                        body = body.toString()
-                    )
-
-                Log.d(
-                    TAG,
-                    "Control channel allocation HTTP: " +
-                        response.code
-                )
-
-                Log.d(
-                    TAG,
-                    "Control channel allocation response: " +
-                        response.body
-                )
-
-                if (
-                    response.code !in 200..299
-                ) {
-
-                    callback(
-                        false,
-                        null,
-                        response.body
-                    )
-
-                    return@thread
-                }
-
-                val json =
-                    JSONObject(
-                        response.body
-                    )
-
-                val channels =
-                    json.optJSONArray(
-                        "dataChannels"
-                    )
-
-                if (
-                    channels == null ||
-                    channels.length() == 0
-                ) {
-
-                    callback(
-                        false,
-                        null,
-                        "Cloudflare tidak mengembalikan dataChannels"
-                    )
-
-                    return@thread
-                }
-
-                val channel =
-                    channels.getJSONObject(0)
-
-                val id =
-                    channel.optInt(
-                        "id",
-                        CONTROL_CHANNEL_ID_UNKNOWN
-                    )
-
-                if (
-                    id < 0
-                ) {
-
-                    callback(
-                        false,
-                        null,
-                        "Cloudflare mengembalikan channel ID tidak valid"
-                    )
-
-                    return@thread
-                }
-
-                controlChannelId =
-                    id
-
-                Log.d(
-                    TAG,
-                    "Cloudflare control channel ID: $id"
-                )
-
-                callback(
-                    true,
-                    id,
-                    null
-                )
-
-            } catch (e: Exception) {
-
-                callback(
-                    false,
-                    null,
-                    e.message ?: "Unknown error"
-                )
-            }
-        }
-    }
-
-    // =========================================================
-    // DATA CHANNEL - CREATE NEGOTIATED CHANNEL
-    // =========================================================
-
-    private fun createNegotiatedControlChannel(
-        channelId: Int,
-        callback:
-            (Boolean, String?) -> Unit
-    ) {
-
-        val connection =
-            peerConnection
-
-        if (connection == null) {
-
-            callback(
-                false,
-                "PeerConnection belum tersedia"
-            )
-
-            return
-        }
-
-        runOnPeerThread {
-
-            try {
-
-                controlDataChannel?.let {
-                    try {
-                        it.unregisterObserver()
-                    } catch (_: Exception) {
-                    }
-
-                    try {
-                        it.dispose()
-                    } catch (_: Exception) {
-                    }
-                }
-
-                controlDataChannel =
-                    null
-
-                controlChannelReady =
-                    false
-
-                controlChannelId =
-                    channelId
-
-                val init =
-                    DataChannel.Init().apply {
-
-                        ordered = true
-                        negotiated = true
-                        id = channelId
-                    }
-
-                val channel =
-                    connection.createDataChannel(
-                        CONTROL_CHANNEL_NAME,
-                        init
-                    )
-
-                if (channel == null) {
-
-                    callback(
-                        false,
-                        "createDataChannel() mengembalikan null"
-                    )
-
-                    return@runOnPeerThread
-                }
-
-                attachControlDataChannel(
-                    channel
-                )
-
-                Log.d(
-                    TAG,
-                    "controls DataChannel dibuat: " +
-                        "id=$channelId " +
-                        "state=${channel.state()}"
-                )
-
-                callback(
-                    true,
-                    null
-                )
-
-            } catch (e: Exception) {
-
                 Log.e(
                     TAG,
-                    "Gagal membuat negotiated controls DataChannel",
+                    "Setup DataChannel gagal",
                     e
-                )
-
-                callback(
-                    false,
-                    e.message ?: "Unknown error"
                 )
             }
         }
     }
 
     // =========================================================
-    // ATTACH CONTROL CHANNEL
+    // CREATE CONTROL CHANNEL
     // =========================================================
 
-    private fun attachControlDataChannel(
+    private fun createControlChannel() {
+        val sid = sessionId ?: return
+        val connection = pc ?: return
+
+        try {
+            val body =
+                JSONObject().apply {
+                    put(
+                        "sessionId",
+                        sid
+                    )
+                    put(
+                        "dataChannelName",
+                        CONTROL
+                    )
+                    put(
+                        "location",
+                        "local"
+                    )
+                }
+
+            val response =
+                request(
+                    "POST",
+                    "$WORKER/api/datachannel-publish",
+                    body.toString()
+                )
+
+            val json =
+                JSONObject(response)
+
+            val channels =
+                json.optJSONArray(
+                    "dataChannels"
+                )
+
+            if (
+                channels == null ||
+                channels.length() == 0
+            ) {
+                throw Exception(
+                    "Cloudflare tidak mengembalikan dataChannels: $response"
+                )
+            }
+
+            val channelJson =
+                channels.getJSONObject(0)
+
+            val id =
+                channelJson.optInt(
+                    "id",
+                    -1
+                )
+
+            if (id < 0) {
+                throw Exception(
+                    "Channel ID tidak valid"
+                )
+            }
+
+            createNegotiatedControlChannel(
+                connection,
+                id
+            )
+
+        } catch (e: Exception) {
+            Log.e(
+                TAG,
+                "Create control channel gagal",
+                e
+            )
+        }
+    }
+
+    private fun createNegotiatedControlChannel(
+        connection: PeerConnection,
+        id: Int
+    ) {
+        try {
+            controlChannel?.unregisterObserver()
+            controlChannel?.dispose()
+
+            controlChannel = null
+            controlReady = false
+            controlChannelId = id
+
+            val init =
+                DataChannel.Init().apply {
+                    ordered = true
+                    negotiated = true
+                    this.id = id
+                }
+
+            val channel =
+                connection.createDataChannel(
+                    CONTROL,
+                    init
+                )
+                    ?: throw Exception(
+                        "createDataChannel returned null"
+                    )
+
+            attachControl(channel)
+
+            Log.d(
+                TAG,
+                "CONTROL channel created id=$id"
+            )
+
+        } catch (e: Exception) {
+            Log.e(
+                TAG,
+                "Control channel gagal",
+                e
+            )
+        }
+    }
+
+    private fun attachControl(
         channel: DataChannel
     ) {
-
-        controlDataChannel =
-            channel
-
-        controlChannelReady =
-            channel.state() ==
-                DataChannel.State.OPEN
+        controlChannel = channel
+        controlReady =
+            channel.state() == DataChannel.State.OPEN
 
         channel.registerObserver(
             object : DataChannel.Observer {
 
-                override fun onBufferedAmountChange(
-                    previousAmount: Long
-                ) {
-
-                    Log.d(
-                        TAG,
-                        "Control DataChannel buffered amount: " +
-                            previousAmount
-                    )
-                }
-
                 override fun onStateChange() {
-
                     val state =
                         channel.state()
 
-                    controlChannelReady =
+                    controlReady =
                         state ==
                             DataChannel.State.OPEN
 
                     Log.d(
                         TAG,
-                        "Control DataChannel state: $state"
+                        "CONTROL state=$state"
                     )
                 }
 
                 override fun onMessage(
                     buffer: DataChannel.Buffer
                 ) {
-
                     try {
-
                         val bytes =
                             ByteArray(
                                 buffer.data.remaining()
                             )
 
-                        buffer.data.get(
-                            bytes
-                        )
+                        buffer.data.get(bytes)
 
                         val message =
                             String(
@@ -1895,391 +1016,267 @@ class RealtimeManager(
 
                         Log.d(
                             TAG,
-                            "Control DataChannel message: $message"
+                            "CONTROL RX=$message"
                         )
 
+                        // Publisher Android tidak perlu
+                        // mengeksekusi command di sini.
+                        // Channel ini menerima/menjaga
+                        // koneksi kontrol.
                     } catch (e: Exception) {
-
                         Log.e(
                             TAG,
-                            "Gagal membaca control message",
+                            "CONTROL message error",
                             e
                         )
                     }
+                }
+
+                override fun onBufferedAmountChange(
+                    previousAmount: Long
+                ) {
                 }
             }
         )
     }
 
     // =========================================================
-    // SEND CONTROL COMMAND
+    // SEND CONTROL
     // =========================================================
 
     fun sendControlCommand(
         command: String
     ): Boolean {
-
         val channel =
-            controlDataChannel
-
-        if (channel == null) {
-
-            Log.e(
-                TAG,
-                "Control DataChannel belum dibuat"
-            )
-
-            return false
-        }
+            controlChannel
+                ?: return false
 
         if (
             channel.state() !=
             DataChannel.State.OPEN
         ) {
-
-            Log.e(
-                TAG,
-                "Control DataChannel belum OPEN: " +
-                    channel.state()
-            )
-
             return false
         }
 
         return try {
-
-            val buffer =
-                ByteBuffer.wrap(
-                    command.toByteArray(
-                        Charsets.UTF_8
-                    )
+            val data =
+                command.toByteArray(
+                    Charsets.UTF_8
                 )
 
-            val sent =
-                channel.send(
-                    DataChannel.Buffer(
-                        buffer,
-                        false
-                    )
+            channel.send(
+                DataChannel.Buffer(
+                    ByteBuffer.wrap(data),
+                    false
                 )
-
-            Log.d(
-                TAG,
-                "Control command dikirim: " +
-                    "$command sent=$sent"
             )
-
-            sent
-
         } catch (e: Exception) {
-
             Log.e(
                 TAG,
-                "Gagal mengirim control command",
+                "Send control gagal",
                 e
             )
-
             false
         }
     }
 
-    // =========================================================
-    // CONTROL STATUS
-    // =========================================================
+    fun isControlChannelReady(): Boolean =
+        controlReady
 
-    fun isControlChannelReady():
-        Boolean {
-
-        return controlChannelReady
-    }
-
-    fun getControlChannelId():
-        Int? {
-
-        return controlChannelId
-    }
+    fun getControlChannelId(): Int? =
+        controlChannelId
 
     // =========================================================
-    // SET REMOTE ANSWER
+    // SDP HELPERS
     // =========================================================
 
-    fun setRemoteAnswer(
-        answer: SessionDescription,
-        callback:
-            (() -> Unit)? = null
-    ) {
+    private fun setRemoteDescriptionSync(
+        connection: PeerConnection,
+        description: SessionDescription
+    ): Boolean {
+        val latch =
+            CountDownLatch(1)
 
-        val connection =
-            peerConnection
-
-        if (connection == null) {
-
-            Log.e(
-                TAG,
-                "PeerConnection belum dibuat"
-            )
-
-            return
-        }
+        var success = false
 
         connection.setRemoteDescription(
-            object : SdpObserver {
-
-                override fun onCreateSuccess(
-                    description:
-                        SessionDescription
-                ) {
-                }
+            object : org.webrtc.SdpObserver {
 
                 override fun onSetSuccess() {
-
-                    Log.d(
-                        TAG,
-                        "Remote SDP berhasil diset"
-                    )
-
-                    callback?.invoke()
-                }
-
-                override fun onCreateFailure(
-                    error: String
-                ) {
-
-                    Log.e(
-                        TAG,
-                        "Remote SDP create failure: $error"
-                    )
+                    success = true
+                    latch.countDown()
                 }
 
                 override fun onSetFailure(
                     error: String
                 ) {
-
                     Log.e(
                         TAG,
-                        "Remote SDP set failure: $error"
+                        "setRemote failure=$error"
                     )
+                    latch.countDown()
+                }
+
+                override fun onCreateSuccess(
+                    description: SessionDescription
+                ) {
+                }
+
+                override fun onCreateFailure(
+                    error: String
+                ) {
+                    latch.countDown()
                 }
             },
-            answer
+            description
         )
+
+        latch.await(
+            15,
+            TimeUnit.SECONDS
+        )
+
+        return success
     }
 
-    // =========================================================
-    // ICE
-    // =========================================================
+    private fun createAnswerSync(
+        connection: PeerConnection
+    ): SessionDescription? {
+        val latch =
+            CountDownLatch(1)
 
-    fun addIceCandidate(
-        candidate: IceCandidate
+        var result:
+            SessionDescription? = null
+
+        connection.createAnswer(
+            object : org.webrtc.SdpObserver {
+
+                override fun onCreateSuccess(
+                    description: SessionDescription
+                ) {
+                    connection.setLocalDescription(
+                        object : org.webrtc.SdpObserver {
+
+                            override fun onSetSuccess() {
+                                result =
+                                    description
+                                latch.countDown()
+                            }
+
+                            override fun onCreateSuccess(
+                                description: SessionDescription
+                            ) {
+                            }
+
+                            override fun onCreateFailure(
+                                error: String
+                            ) {
+                                latch.countDown()
+                            }
+
+                            override fun onSetFailure(
+                                error: String
+                            ) {
+                                Log.e(
+                                    TAG,
+                                    "set answer failed=$error"
+                                )
+                                latch.countDown()
+                            }
+                        },
+                        description
+                    )
+                }
+
+                override fun onCreateFailure(
+                    error: String
+                ) {
+                    Log.e(
+                        TAG,
+                        "create answer failed=$error"
+                    )
+                    latch.countDown()
+                }
+
+                override fun onSetSuccess() {
+                }
+
+                override fun onSetFailure(
+                    error: String
+                ) {
+                }
+            },
+            MediaConstraints()
+        )
+
+        latch.await(
+            15,
+            TimeUnit.SECONDS
+        )
+
+        return result
+    }
+
+    private fun waitIce(
+        connection: PeerConnection
     ) {
-
-        val connection =
-            peerConnection
-
-        if (connection == null) {
-
-            Log.e(
-                TAG,
-                "PeerConnection belum tersedia"
-            )
-
+        if (
+            connection.iceGatheringState() ==
+            PeerConnection.IceGatheringState.COMPLETE
+        ) {
             return
         }
 
-        connection.addIceCandidate(
-            candidate
-        )
+        val latch =
+            CountDownLatch(1)
 
-        Log.d(
-            TAG,
-            "ICE candidate ditambahkan"
-        )
+        val observer =
+            object : PeerConnection.Observer by EmptyPeerObserver() {
+
+                override fun onIceGatheringChange(
+                    state:
+                        PeerConnection.IceGatheringState
+                ) {
+                    if (
+                        state ==
+                        PeerConnection.IceGatheringState.COMPLETE
+                    ) {
+                        latch.countDown()
+                    }
+                }
+            }
+
+        // Tidak mengganti observer aktif.
+        // Tunggu berdasarkan SDP candidate timeout.
+        Thread.sleep(1500)
     }
 
     // =========================================================
-    // VIDEO TRACK
+    // HTTP
     // =========================================================
 
-    fun getVideoTrack():
-        VideoTrack? {
-
-        return videoTrack
-    }
-
-    // =========================================================
-    // CAPTURE STATUS
-    // =========================================================
-
-    fun isCapturing():
-        Boolean {
-
-        return capturing
-    }
-
-    // =========================================================
-    // SCREEN CAPTURE STOP
-    // =========================================================
-
-    fun stopScreenCapture() {
-
-        Log.d(
-            TAG,
-            "Menghentikan screen capture"
-        )
-
-        try {
-            screenCapturer?.stopCapture()
-        } catch (e: Exception) {
-            Log.e(
-                TAG,
-                "Gagal stop screen capturer",
-                e
-            )
-        }
-
-        try {
-            screenCapturer?.dispose()
-        } catch (e: Exception) {
-            Log.e(
-                TAG,
-                "Gagal dispose screen capturer",
-                e
-            )
-        }
-
-        screenCapturer =
-            null
-
-        try {
-            videoTrack?.dispose()
-        } catch (_: Exception) {
-        }
-
-        videoTrack =
-            null
-
-        try {
-            videoSource?.dispose()
-        } catch (_: Exception) {
-        }
-
-        videoSource =
-            null
-
-        try {
-            surfaceTextureHelper?.dispose()
-        } catch (_: Exception) {
-        }
-
-        surfaceTextureHelper =
-            null
-
-        capturing =
-            false
-
-        Log.d(
-            TAG,
-            "Screen capture dihentikan"
-        )
-    }
-
-    // =========================================================
-    // DISPOSE
-    // =========================================================
-
-    fun dispose() {
-
-        Log.d(
-            TAG,
-            "Dispose RealtimeManager"
-        )
-
-        stopScreenCapture()
-
-        try {
-
-            controlDataChannel
-                ?.unregisterObserver()
-
-            controlDataChannel
-                ?.dispose()
-
-        } catch (_: Exception) {
-        }
-
-        controlDataChannel =
-            null
-
-        controlChannelId =
-            null
-
-        controlChannelReady =
-            false
-
-        try {
-            peerConnection?.close()
-        } catch (_: Exception) {
-        }
-
-        peerConnection =
-            null
-
-        try {
-            peerConnectionFactory?.dispose()
-        } catch (_: Exception) {
-        }
-
-        peerConnectionFactory =
-            null
-
-        initialized =
-            false
-
-        currentSessionId =
-            null
-
-        Log.d(
-            TAG,
-            "RealtimeManager selesai dispose"
-        )
-    }
-
-    // =========================================================
-    // HTTP HELPER
-    // =========================================================
-
-    private data class HttpResult(
-        val code: Int,
-        val body: String
-    )
-
-    private fun httpRequest(
+    private fun request(
         method: String,
-        path: String,
-        body: String? = null
-    ): HttpResult {
-
-        val url =
-            URL(
-                "$WORKER_URL$path"
-            )
+        urlString: String,
+        body: String
+    ): String {
 
         val connection =
-            url.openConnection()
-                as HttpURLConnection
+            URL(urlString)
+                .openConnection()
+                    as HttpURLConnection
 
         try {
-
             connection.requestMethod =
                 method
 
             connection.setRequestProperty(
-                "Accept",
+                "Content-Type",
                 "application/json"
             )
 
             connection.setRequestProperty(
-                "Content-Type",
+                "Accept",
                 "application/json"
             )
 
@@ -2289,16 +1286,12 @@ class RealtimeManager(
             connection.readTimeout =
                 30000
 
-            if (
-                body != null &&
-                (
-                    method == "POST" ||
-                    method == "PUT"
-                )
-            ) {
+            connection.doInput = true
 
-                connection.doOutput =
-                    true
+            if (
+                method != "GET"
+            ) {
+                connection.doOutput = true
 
                 connection.outputStream.use {
                     it.write(
@@ -2312,93 +1305,224 @@ class RealtimeManager(
             val code =
                 connection.responseCode
 
-            val text =
+            val stream =
                 if (code in 200..299) {
-
                     connection.inputStream
-                        .bufferedReader()
-                        .use {
-                            it.readText()
-                        }
-
                 } else {
-
                     connection.errorStream
-                        ?.bufferedReader()
-                        ?.use {
-                            it.readText()
-                        }
-                        ?: "HTTP $code"
                 }
 
-            return HttpResult(
-                code,
-                text
-            )
+            val text =
+                stream
+                    ?.bufferedReader()
+                    ?.use { it.readText() }
+                    ?: "HTTP $code"
+
+            if (
+                code !in 200..299
+            ) {
+                throw Exception(
+                    "HTTP $code: $text"
+                )
+            }
+
+            return text
 
         } finally {
-
             connection.disconnect()
         }
     }
 
     // =========================================================
-    // WAIT ICE
+    // PUBLIC HELPERS
     // =========================================================
 
-    private fun waitForIceGathering(
-        timeoutMs: Long = 10000L,
-        callback: () -> Unit
+    fun setRemoteAnswer(
+        answer: SessionDescription,
+        callback: (() -> Unit)? = null
     ) {
+        pc?.setRemoteDescription(
+            object : org.webrtc.SdpObserver {
 
-        thread {
-
-            val start =
-                System.currentTimeMillis()
-
-            while (
-                System.currentTimeMillis() -
-                    start <
-                    timeoutMs
-            ) {
-
-                val state =
-                    peerConnection
-                        ?.iceGatheringState()
-
-                if (
-                    state ==
-                    PeerConnection.IceGatheringState.COMPLETE
-                ) {
-                    break
+                override fun onSetSuccess() {
+                    callback?.invoke()
                 }
 
-                Thread.sleep(50)
-            }
+                override fun onSetFailure(
+                    error: String
+                ) {
+                    Log.e(
+                        TAG,
+                        "Remote answer gagal=$error"
+                    )
+                }
 
-            callback()
+                override fun onCreateSuccess(
+                    description: SessionDescription
+                ) {
+                }
+
+                override fun onCreateFailure(
+                    error: String
+                ) {
+                }
+            },
+            answer
+        )
+    }
+
+    fun addIceCandidate(
+        candidate: IceCandidate
+    ) {
+        pc?.addIceCandidate(candidate)
+    }
+
+    fun getVideoTrack(): VideoTrack? =
+        videoTrack
+
+    fun isCapturing(): Boolean =
+        capturing
+
+    // =========================================================
+    // STOP
+    // =========================================================
+
+    fun stopScreenCapture() {
+        try {
+            capturer?.stopCapture()
+        } catch (_: Exception) {
         }
+
+        try {
+            capturer?.dispose()
+        } catch (_: Exception) {
+        }
+
+        try {
+            videoTrack?.dispose()
+        } catch (_: Exception) {
+        }
+
+        try {
+            videoSource?.dispose()
+        } catch (_: Exception) {
+        }
+
+        try {
+            textureHelper?.dispose()
+        } catch (_: Exception) {
+        }
+
+        capturer = null
+        videoTrack = null
+        videoSource = null
+        textureHelper = null
+
+        capturing = false
     }
 
     // =========================================================
-    // WEBRTC THREAD HELPER
+    // DISPOSE
     // =========================================================
 
-    private fun runOnPeerThread(
-        block: () -> Unit
-    ) {
+    fun dispose() {
+        stopScreenCapture()
 
-        thread {
-            try {
-                block()
-            } catch (e: Exception) {
-
-                Log.e(
-                    TAG,
-                    "Error pada PeerConnection thread",
-                    e
-                )
-            }
+        try {
+            controlChannel?.unregisterObserver()
+            controlChannel?.dispose()
+        } catch (_: Exception) {
         }
+
+        controlChannel = null
+        controlChannelId = null
+        controlReady = false
+
+        try {
+            pc?.close()
+        } catch (_: Exception) {
+        }
+
+        pc = null
+
+        try {
+            factory?.dispose()
+        } catch (_: Exception) {
+        }
+
+        factory = null
+        sessionId = null
+        initialized = false
+    }
+
+    // =========================================================
+    // EMPTY OBSERVER
+    // =========================================================
+
+    private class EmptyPeerObserver :
+        PeerConnection.Observer {
+
+        override fun onSignalingChange(
+            state: PeerConnection.SignalingState
+        ) {}
+
+        override fun onIceConnectionChange(
+            state: PeerConnection.IceConnectionState
+        ) {}
+
+        override fun onIceConnectionReceivingChange(
+            receiving: Boolean
+        ) {}
+
+        override fun onIceGatheringChange(
+            state: PeerConnection.IceGatheringState
+        ) {}
+
+        override fun onIceCandidate(
+            candidate: IceCandidate
+        ) {}
+
+        override fun onIceCandidatesRemoved(
+            candidates: Array<out IceCandidate>
+        ) {}
+
+        override fun onAddStream(
+            stream: org.webrtc.MediaStream
+        ) {}
+
+        override fun onRemoveStream(
+            stream: org.webrtc.MediaStream
+        ) {}
+
+        override fun onDataChannel(
+            dataChannel: DataChannel
+        ) {}
+
+        override fun onRenegotiationNeeded() {}
+
+        override fun onAddTrack(
+            receiver: org.webrtc.RtpReceiver,
+            mediaStreams:
+                Array<out org.webrtc.MediaStream>
+        ) {}
+
+        override fun onTrack(
+            transceiver: org.webrtc.RtpTransceiver
+        ) {}
+
+        override fun onIceCandidateError(
+            event:
+                org.webrtc.IceCandidateErrorEvent
+        ) {}
+
+        override fun onSelectedCandidatePairChanged(
+            event:
+                org.webrtc.CandidatePairChangeEvent
+        ) {}
+
+        override fun onConnectionChange(
+            newState:
+                PeerConnection.PeerConnectionState
+        ) {}
     }
 }
