@@ -425,370 +425,2210 @@ tr:last-child td{border-bottom:0}
 <div id="toast" style="position:fixed;right:22px;bottom:22px;z-index:200;display:none;background:#171e26;border:1px solid #344150;color:#dce2e8;padding:11px 14px;border-radius:8px;font-size:11px;box-shadow:0 12px 30px #0008"></div>
 
 <script>
-const API_URL = "https://web-phone-oneforall.danip4848.workers.dev";
+const API_URL =
+    "https://web-phone-oneforall.danip4848.workers.dev";
 
 let devices = [];
+let registrationRequests = [];
 let phoneTab = "registered";
 let selectedDevice = null;
 let refreshTimer = null;
 let autoRefresh = true;
 
 const STORAGE = {
-    names: "rp_device_names_v2",
-    registered: "rp_registered_devices_v2",
-    requests: "rp_registration_requests_v2",
-    categories: "rp_categories_v2",
-    categoryMap: "rp_device_categories_v2",
-    deleted: "rp_deleted_devices_v2"
+    categories: "rp_categories_v3",
+    categoryMap: "rp_device_categories_v3"
 };
 
+
+// =====================================================
+// LOCAL STORAGE
+// =====================================================
+
 function read(key, fallback) {
-    try { return JSON.parse(localStorage.getItem(key)) ?? fallback; }
-    catch { return fallback; }
-}
-function write(key, value) { localStorage.setItem(key, JSON.stringify(value)); }
-
-function getNames(){return read(STORAGE.names,{});}
-function getRegistered(){return read(STORAGE.registered,{});}
-function getRequests(){return read(STORAGE.requests,{});}
-function getCategories(){return read(STORAGE.categories,[{id:"no-category",name:"No Category",system:true}]);}
-function getCategoryMap(){return read(STORAGE.categoryMap,{});}
-function getDeleted(){return read(STORAGE.deleted,{});}
-
-function escapeHtml(v){
-    return String(v ?? "").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&#039;");
+    try {
+        return JSON.parse(
+            localStorage.getItem(key)
+        ) ?? fallback;
+    } catch {
+        return fallback;
+    }
 }
 
-function deviceName(d){
-    return getNames()[d.id] || d.displayName || d.name || d.model || "Android Device";
+function write(key, value) {
+    localStorage.setItem(
+        key,
+        JSON.stringify(value)
+    );
 }
-function isRegistered(id){ return !!getRegistered()[id]; }
-function isRequested(id){ return !!getRequests()[id]; }
-function isDeleted(id){ return !!getDeleted()[id]; }
-function categoryName(id){
-    const c = getCategories().find(x=>x.id===id);
-    return c ? c.name : "No Category";
-}
-function deviceCategory(id){ return getCategoryMap()[id] || "no-category"; }
 
-async function loadDevices(){
-    try{
-        const r = await fetch(`${API_URL}/api/devices`,{cache:"no-store"});
-        if(!r.ok) throw new Error(`HTTP ${r.status}`);
-        const data = await r.json();
-        devices = Array.isArray(data.devices) ? data.devices : [];
-        document.getElementById("connectionDot").classList.add("online");
-        document.getElementById("connectionText").textContent = "Cloudflare connected";
+function getCategories() {
+    return read(
+        STORAGE.categories,
+        [
+            {
+                id: "no-category",
+                name: "No Category",
+                system: true
+            }
+        ]
+    );
+}
+
+function getCategoryMap() {
+    return read(
+        STORAGE.categoryMap,
+        {}
+    );
+}
+
+
+// =====================================================
+// HELPERS
+// =====================================================
+
+function escapeHtml(v) {
+    return String(v ?? "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+}
+
+function deviceName(d) {
+    return (
+        d.displayName ||
+        d.name ||
+        d.model ||
+        "Android Device"
+    );
+}
+
+function isRegistered(d) {
+    return (
+        d.registrationStatus ===
+        "registered"
+    );
+}
+
+function isRequested(d) {
+    return (
+        d.registrationStatus ===
+        "requested"
+    );
+}
+
+function categoryName(id) {
+    const category =
+        getCategories().find(
+            x => x.id === id
+        );
+
+    return category
+        ? category.name
+        : "No Category";
+}
+
+function deviceCategory(id) {
+    return (
+        getCategoryMap()[id] ||
+        "no-category"
+    );
+}
+
+
+// =====================================================
+// LOAD DEVICES + REGISTRATION REQUESTS
+// =====================================================
+
+async function loadDevices() {
+
+    try {
+
+        const [
+            devicesResponse,
+            requestsResponse
+        ] = await Promise.all([
+
+            fetch(
+                `${API_URL}/api/devices`,
+                {
+                    cache: "no-store"
+                }
+            ),
+
+            fetch(
+                `${API_URL}/api/registration-requests`,
+                {
+                    cache: "no-store"
+                }
+            )
+
+        ]);
+
+        if (!devicesResponse.ok) {
+            throw new Error(
+                `Devices HTTP ${devicesResponse.status}`
+            );
+        }
+
+        if (!requestsResponse.ok) {
+            throw new Error(
+                `Requests HTTP ${requestsResponse.status}`
+            );
+        }
+
+        const devicesData =
+            await devicesResponse.json();
+
+        const requestsData =
+            await requestsResponse.json();
+
+        devices =
+            Array.isArray(
+                devicesData.devices
+            )
+                ? devicesData.devices
+                : [];
+
+        registrationRequests =
+            Array.isArray(
+                requestsData.requests
+            )
+                ? requestsData.requests
+                : [];
+
+        document
+            .getElementById(
+                "connectionDot"
+            )
+            .classList.add(
+                "online"
+            );
+
+        document
+            .getElementById(
+                "connectionText"
+            )
+            .textContent =
+            "Cloudflare connected";
+
         renderAll();
-    }catch(e){
-        console.error(e);
-        document.getElementById("connectionDot").classList.remove("online");
-        document.getElementById("connectionText").textContent = "Cloudflare unavailable";
+
+    } catch (error) {
+
+        console.error(
+            "loadDevices:",
+            error
+        );
+
+        document
+            .getElementById(
+                "connectionDot"
+            )
+            .classList.remove(
+                "online"
+            );
+
+        document
+            .getElementById(
+                "connectionText"
+            )
+            .textContent =
+            "Cloudflare unavailable";
+
         renderAll();
     }
 }
 
-function renderAll(){
+
+// =====================================================
+// RENDER ALL
+// =====================================================
+
+function renderAll() {
+
     renderStats();
+
     renderCategories();
+
     renderPhones();
+
     renderDevices();
 }
 
-function renderStats(){
-    const active = devices.filter(d=>!isDeleted(d.id));
-    const registered = active.filter(d=>isRegistered(d.id));
-    const online = registered.filter(d=>d.online===true);
-    const requests = active.filter(d=>isRequested(d.id) && !isRegistered(d.id));
-    document.getElementById("statRegistered").textContent = registered.length;
-    document.getElementById("statOnline").textContent = online.length;
-    document.getElementById("statRequests").textContent = requests.length;
-    document.getElementById("statCategories").textContent = Math.max(1,getCategories().length);
+
+// =====================================================
+// STATS
+// =====================================================
+
+function renderStats() {
+
+    const registered =
+        devices.filter(
+            d => isRegistered(d)
+        );
+
+    const online =
+        registered.filter(
+            d => d.online === true
+        );
+
+    document
+        .getElementById(
+            "statRegistered"
+        )
+        .textContent =
+        registered.length;
+
+    document
+        .getElementById(
+            "statOnline"
+        )
+        .textContent =
+        online.length;
+
+    document
+        .getElementById(
+            "statRequests"
+        )
+        .textContent =
+        registrationRequests.length;
+
+    document
+        .getElementById(
+            "statCategories"
+        )
+        .textContent =
+        Math.max(
+            1,
+            getCategories().length
+        );
 }
 
-function renderCategories(){
-    const grid = document.getElementById("categoryGrid");
-    const active = devices.filter(d=>!isDeleted(d.id) && isRegistered(d.id));
-    const cats = getCategories();
-    grid.innerHTML = cats.map(cat=>{
-        const count = active.filter(d=>deviceCategory(d.id)===cat.id).length;
-        return `
-        <div class="folder" onclick="openCategory('${escapeHtml(cat.id)}')">
-            <button class="folder-delete" title="${cat.system?'Kategori default tidak bisa dihapus':'Hapus kategori'}"
-                onclick="deleteCategory(event,'${escapeHtml(cat.id)}')" ${cat.system?'disabled':''}>×</button>
-            <div class="folder-icon">📁</div>
-            <div class="folder-name">${escapeHtml(cat.name)}</div>
-            <div class="folder-meta">${count} phone${count===1?'':'s'}</div>
-        </div>`;
-    }).join("");
+
+// =====================================================
+// CATEGORIES
+// =====================================================
+
+function renderCategories() {
+
+    const grid =
+        document.getElementById(
+            "categoryGrid"
+        );
+
+    const registered =
+        devices.filter(
+            d => isRegistered(d)
+        );
+
+    const categories =
+        getCategories();
+
+    grid.innerHTML =
+        categories
+            .map(category => {
+
+                const count =
+                    registered.filter(
+                        d =>
+                            deviceCategory(
+                                d.id
+                            ) ===
+                            category.id
+                    ).length;
+
+                return `
+                    <div
+                        class="folder"
+                        onclick="openCategory('${escapeHtml(category.id)}')"
+                    >
+
+                        <button
+                            class="folder-delete"
+                            title="${
+                                category.system
+                                    ? "Kategori default tidak bisa dihapus"
+                                    : "Hapus kategori"
+                            }"
+                            onclick="
+                                deleteCategory(
+                                    event,
+                                    '${escapeHtml(category.id)}'
+                                )
+                            "
+                            ${
+                                category.system
+                                    ? "disabled"
+                                    : ""
+                            }
+                        >
+                            ×
+                        </button>
+
+                        <div class="folder-icon">
+                            📁
+                        </div>
+
+                        <div class="folder-name">
+                            ${escapeHtml(category.name)}
+                        </div>
+
+                        <div class="folder-meta">
+                            ${count}
+                            phone${count === 1 ? "" : "s"}
+                        </div>
+
+                    </div>
+                `;
+            })
+            .join("");
 }
 
-function setPhoneTab(tab){
-    phoneTab=tab;
-    document.querySelectorAll(".tab").forEach(x=>x.classList.remove("active"));
-    document.getElementById(tab==="registered"?"tabRegistered":tab==="requests"?"tabRequests":"tabDeleted").classList.add("active");
-    document.getElementById("phonesHeading").textContent =
-        tab==="registered"?"Registered Phones":tab==="requests"?"Registration Requests":"Deleted Devices";
-    document.getElementById("requestNotice").style.display = tab==="requests"?"block":"none";
+
+// =====================================================
+// PHONE TABS
+// =====================================================
+
+function setPhoneTab(tab) {
+
+    phoneTab = tab;
+
+    document
+        .querySelectorAll(".tab")
+        .forEach(
+            element =>
+                element.classList.remove(
+                    "active"
+                )
+        );
+
+    const target =
+        tab === "registered"
+            ? "tabRegistered"
+            : tab === "requests"
+                ? "tabRequests"
+                : "tabDeleted";
+
+    document
+        .getElementById(target)
+        .classList.add(
+            "active"
+        );
+
+    document
+        .getElementById(
+            "phonesHeading"
+        )
+        .textContent =
+        tab === "registered"
+            ? "Registered Phones"
+            : tab === "requests"
+                ? "Registration Requests"
+                : "Deleted Devices";
+
+    document
+        .getElementById(
+            "requestNotice"
+        )
+        .style.display =
+        tab === "requests"
+            ? "block"
+            : "none";
+
     renderPhones();
 }
 
-function renderPhones(){
-    const grid=document.getElementById("phoneGrid");
-    const q=(document.getElementById("phoneSearch")?.value||"").toLowerCase();
-    let list=[];
-    if(phoneTab==="registered"){
-        list=devices.filter(d=>!isDeleted(d.id)&&isRegistered(d.id));
-    }else if(phoneTab==="requests"){
-        list=devices.filter(d=>!isDeleted(d.id)&&!isRegistered(d.id)&&isRequested(d.id));
-    }else{
-        list=devices.filter(d=>isDeleted(d.id));
-    }
-    list=list.filter(d=>(deviceName(d)+" "+(d.model||"")+" "+d.id).toLowerCase().includes(q));
 
-    if(!list.length){
-        grid.innerHTML=`<div class="empty" style="grid-column:1/-1"><strong>${
-            phoneTab==="registered"?"Belum ada registered phone":
-            phoneTab==="requests"?"Belum ada registration request":
-            "Tidak ada deleted device"
-        }</strong>${
-            phoneTab==="requests"?"Tunggu APK menekan Request Register.":""
-        }</div>`;
-        return;
+// =====================================================
+// PHONES
+// =====================================================
+
+function renderPhones() {
+
+    const grid =
+        document.getElementById(
+            "phoneGrid"
+        );
+
+    const search =
+        (
+            document.getElementById(
+                "phoneSearch"
+            )?.value || ""
+        )
+            .toLowerCase();
+
+    let list = [];
+
+    if (
+        phoneTab ===
+        "registered"
+    ) {
+
+        list =
+            devices.filter(
+                d =>
+                    isRegistered(d)
+            );
+
+    } else if (
+        phoneTab ===
+        "requests"
+    ) {
+
+        list =
+            registrationRequests;
+
+    } else {
+
+        /*
+         * Device yang sudah di-delete
+         * memang tidak dikirim lagi
+         * oleh Cloudflare.
+         *
+         * Jadi tab Deleted hanya
+         * akan menjadi kosong setelah
+         * backend delete dilakukan.
+         */
+
+        list = [];
     }
 
-    grid.innerHTML=list.map(d=>{
-        const online=d.online===true;
-        const requested=isRequested(d.id);
-        return `
-        <div class="card phone-card">
-            <div class="card-top">
-                <div class="phone-icon">📱</div>
-                <div class="status ${online?"online":"offline"}"><span class="dot ${online?"online":""}"></span>${online?"Online":"Offline"}</div>
-            </div>
-            <div class="card-name">
-                ${escapeHtml(deviceName(d))}
-                ${phoneTab==="registered"?`<button class="edit-name" title="Rename" onclick="renameDevice(event,'${escapeHtml(d.id)}')">✎</button>`:""}
-            </div>
-            <div class="model">${escapeHtml(d.model||"Unknown model")}</div>
-            ${phoneTab==="registered"?`<span class="category-pill">📁 ${escapeHtml(categoryName(deviceCategory(d.id)))}</span>`:""}
-            <div class="meta">
-                <div>Device ID<strong class="mono">${escapeHtml(d.id)}</strong></div>
-                <div>Request<strong>${requested?"Pending":"—"}</strong></div>
-            </div>
-            <div class="card-actions">
-                ${phoneTab==="registered"
-                    ? `<button class="btn small" onclick="openViewer('${escapeHtml(d.id)}')">Open Phone</button>
-                       <button class="btn danger small" onclick="deleteDevice('${escapeHtml(d.id)}')">Delete</button>`
-                    : phoneTab==="requests"
-                    ? `<button class="btn primary small" onclick="approveDevice('${escapeHtml(d.id)}')">Approve</button>
-                       <button class="btn danger small" onclick="rejectRequest('${escapeHtml(d.id)}')">Reject</button>`
-                    : `<button class="btn small" onclick="restoreDevice('${escapeHtml(d.id)}')">Restore</button>
-                       <button class="btn danger small" onclick="permanentDeleteLocal('${escapeHtml(d.id)}')">Remove</button>`
+    list =
+        list.filter(
+            d =>
+                (
+                    deviceName(d) +
+                    " " +
+                    (d.model || "") +
+                    " " +
+                    d.id
+                )
+                    .toLowerCase()
+                    .includes(search)
+        );
+
+    if (!list.length) {
+
+        grid.innerHTML = `
+            <div
+                class="empty"
+                style="grid-column:1/-1"
+            >
+                <strong>
+                    ${
+                        phoneTab ===
+                        "registered"
+                            ? "Belum ada registered phone"
+                            : phoneTab ===
+                              "requests"
+                                ? "Belum ada registration request"
+                                : "Tidak ada deleted device"
+                    }
+                </strong>
+
+                ${
+                    phoneTab ===
+                    "requests"
+                        ? "Tunggu APK menekan Request Register."
+                        : ""
                 }
             </div>
-        </div>`;
-    }).join("");
-}
+        `;
 
-function renderDevices(){
-    const tbody=document.getElementById("deviceTable");
-    const q=(document.getElementById("deviceSearch")?.value||"").toLowerCase();
-    const list=devices.filter(d=>!isDeleted(d.id))
-        .filter(d=>(deviceName(d)+" "+(d.model||"")+" "+d.id).toLowerCase().includes(q));
-
-    if(!list.length){
-        tbody.innerHTML=`<tr><td colspan="6"><div class="empty"><strong>No detected devices</strong>Belum ada device yang dikirim oleh Agent.</div></td></tr>`;
         return;
     }
-    tbody.innerHTML=list.map(d=>`
-        <tr>
-            <td><div class="device-main"><div class="device-icon">📱</div><div><div>${escapeHtml(deviceName(d))}</div><div class="mono">${escapeHtml(d.model||"")}</div></div></div></td>
-            <td>${escapeHtml(d.model||"Unknown")}</td>
-            <td><span class="status ${d.online?"online":"offline"}"><span class="dot ${d.online?"online":""}"></span>${d.online?"Online":"Offline"}</span></td>
-            <td>${isRegistered(d.id)?'<span class="status online">Registered</span>':isRequested(d.id)?'<span class="status pending">Request Pending</span>':'<span style="color:#697586">Not requested</span>'}</td>
-            <td class="mono">${escapeHtml(d.id)}</td>
-            <td>
-                ${isRegistered(d.id)
-                    ? `<button class="btn danger small" onclick="deleteDevice('${escapeHtml(d.id)}')">Delete</button>`
-                    : isRequested(d.id)
-                    ? `<button class="btn primary small" onclick="approveDevice('${escapeHtml(d.id)}')">Approve</button>`
-                    : `<button class="btn small" onclick="showToast('Menunggu Request Register dari APK.')">Waiting</button>`}
-            </td>
-        </tr>
-    `).join("");
+
+    grid.innerHTML =
+        list
+            .map(d => {
+
+                const online =
+                    d.online === true;
+
+                const requested =
+                    isRequested(d);
+
+                return `
+                    <div
+                        class="card phone-card"
+                    >
+
+                        <div class="card-top">
+
+                            <div class="phone-icon">
+                                📱
+                            </div>
+
+                            <div
+                                class="status ${
+                                    online
+                                        ? "online"
+                                        : "offline"
+                                }"
+                            >
+                                <span
+                                    class="dot ${
+                                        online
+                                            ? "online"
+                                            : ""
+                                    }"
+                                ></span>
+
+                                ${
+                                    online
+                                        ? "Online"
+                                        : "Offline"
+                                }
+                            </div>
+
+                        </div>
+
+                        <div class="card-name">
+
+                            ${escapeHtml(
+                                deviceName(d)
+                            )}
+
+                            ${
+                                phoneTab ===
+                                "registered"
+                                    ? `
+                                        <button
+                                            class="edit-name"
+                                            title="Rename"
+                                            onclick="
+                                                renameDevice(
+                                                    event,
+                                                    '${escapeHtml(d.id)}'
+                                                )
+                                            "
+                                        >
+                                            ✎
+                                        </button>
+                                      `
+                                    : ""
+                            }
+
+                        </div>
+
+                        <div class="model">
+                            ${escapeHtml(
+                                d.model ||
+                                "Unknown model"
+                            )}
+                        </div>
+
+                        ${
+                            phoneTab ===
+                            "registered"
+                                ? `
+                                    <span
+                                        class="category-pill"
+                                    >
+                                        📁
+                                        ${escapeHtml(
+                                            categoryName(
+                                                deviceCategory(
+                                                    d.id
+                                                )
+                                            )
+                                        )}
+                                    </span>
+                                  `
+                                : ""
+                        }
+
+                        <div class="meta">
+
+                            <div>
+                                Device ID
+                                <strong
+                                    class="mono"
+                                >
+                                    ${escapeHtml(
+                                        d.id
+                                    )}
+                                </strong>
+                            </div>
+
+                            <div>
+                                Registration
+                                <strong>
+                                    ${
+                                        requested
+                                            ? "Pending"
+                                            : isRegistered(d)
+                                                ? "Registered"
+                                                : "—"
+                                    }
+                                </strong>
+                            </div>
+
+                        </div>
+
+                        <div class="card-actions">
+
+                            ${
+                                phoneTab ===
+                                "registered"
+                                    ? `
+                                        <button
+                                            class="btn small"
+                                            onclick="
+                                                openViewer(
+                                                    '${escapeHtml(d.id)}'
+                                                )
+                                            "
+                                        >
+                                            Open Phone
+                                        </button>
+
+                                        <button
+                                            class="btn danger small"
+                                            onclick="
+                                                deleteDevice(
+                                                    '${escapeHtml(d.id)}'
+                                                )
+                                            "
+                                        >
+                                            Delete
+                                        </button>
+                                      `
+
+                                    : phoneTab ===
+                                      "requests"
+
+                                        ? `
+                                            <button
+                                                class="btn primary small"
+                                                onclick="
+                                                    approveDevice(
+                                                        '${escapeHtml(d.id)}'
+                                                    )
+                                                "
+                                            >
+                                                Approve
+                                            </button>
+
+                                            <button
+                                                class="btn danger small"
+                                                onclick="
+                                                    rejectRequest(
+                                                        '${escapeHtml(d.id)}'
+                                                    )
+                                                "
+                                            >
+                                                Reject
+                                            </button>
+                                          `
+
+                                        : ""
+                            }
+
+                        </div>
+
+                    </div>
+                `;
+            })
+            .join("");
 }
 
-function approveDevice(id){
-    const d=devices.find(x=>x.id===id);
-    if(!d)return;
-    const reg=getRegistered(); reg[id]=true; write(STORAGE.registered,reg);
-    const req=getRequests(); delete req[id]; write(STORAGE.requests,req);
-    const names=getNames(); if(!names[id]) names[id]=d.model||"Android Device"; write(STORAGE.names,names);
-    showToast("Device approved. Sekarang masuk Registered.");
-    renderAll();
+
+// =====================================================
+// DEVICES TABLE
+// =====================================================
+
+function renderDevices() {
+
+    const tbody =
+        document.getElementById(
+            "deviceTable"
+        );
+
+    const search =
+        (
+            document.getElementById(
+                "deviceSearch"
+            )?.value || ""
+        )
+            .toLowerCase();
+
+    /*
+     * /api/devices sekarang hanya
+     * mengembalikan device registered.
+     *
+     * Jadi device yang belum registered
+     * tidak akan muncul di halaman Devices.
+     */
+
+    const list =
+        devices.filter(
+            d =>
+                isRegistered(d)
+        )
+        .filter(
+            d =>
+                (
+                    deviceName(d) +
+                    " " +
+                    (d.model || "") +
+                    " " +
+                    d.id
+                )
+                    .toLowerCase()
+                    .includes(search)
+        );
+
+    if (!list.length) {
+
+        tbody.innerHTML = `
+            <tr>
+                <td colspan="6">
+
+                    <div class="empty">
+
+                        <strong>
+                            No registered devices
+                        </strong>
+
+                        Belum ada device yang
+                        di-approve.
+
+                    </div>
+
+                </td>
+            </tr>
+        `;
+
+        return;
+    }
+
+    tbody.innerHTML =
+        list
+            .map(d => {
+
+                const online =
+                    d.online === true;
+
+                return `
+                    <tr>
+
+                        <td>
+
+                            <div
+                                class="device-main"
+                            >
+
+                                <div
+                                    class="device-icon"
+                                >
+                                    📱
+                                </div>
+
+                                <div>
+
+                                    <div>
+                                        ${escapeHtml(
+                                            deviceName(d)
+                                        )}
+                                    </div>
+
+                                    <div
+                                        class="mono"
+                                    >
+                                        ${escapeHtml(
+                                            d.model ||
+                                            ""
+                                        )}
+                                    </div>
+
+                                </div>
+
+                            </div>
+
+                        </td>
+
+                        <td>
+                            ${escapeHtml(
+                                d.model ||
+                                "Unknown"
+                            )}
+                        </td>
+
+                        <td>
+
+                            <span
+                                class="status ${
+                                    online
+                                        ? "online"
+                                        : "offline"
+                                }"
+                            >
+
+                                <span
+                                    class="dot ${
+                                        online
+                                            ? "online"
+                                            : ""
+                                    }"
+                                ></span>
+
+                                ${
+                                    online
+                                        ? "Online"
+                                        : "Offline"
+                                }
+
+                            </span>
+
+                        </td>
+
+                        <td>
+
+                            <span
+                                class="status online"
+                            >
+                                Registered
+                            </span>
+
+                        </td>
+
+                        <td class="mono">
+                            ${escapeHtml(
+                                d.id
+                            )}
+                        </td>
+
+                        <td>
+
+                            <button
+                                class="btn danger small"
+                                onclick="
+                                    deleteDevice(
+                                        '${escapeHtml(d.id)}'
+                                    )
+                                "
+                            >
+                                Delete
+                            </button>
+
+                        </td>
+
+                    </tr>
+                `;
+            })
+            .join("");
 }
-function rejectRequest(id){
-    const req=getRequests(); delete req[id]; write(STORAGE.requests,req);
-    showToast("Registration request ditolak.");
-    renderAll();
+
+
+// =====================================================
+// APPROVE
+// =====================================================
+
+async function approveDevice(id) {
+
+    const device =
+        registrationRequests.find(
+            d => d.id === id
+        );
+
+    if (!device) {
+        showToast(
+            "Registration request tidak ditemukan."
+        );
+        return;
+    }
+
+    openModal(
+        "Approve Registration",
+        `
+            <p>
+                Device ini akan menjadi
+                <b>Registered</b>.
+            </p>
+
+            <label class="form-label">
+                Phone Name
+            </label>
+
+            <input
+                class="input"
+                id="modalInput"
+                value="${escapeHtml(
+                    device.displayName ||
+                    device.model ||
+                    "Android Device"
+                )}"
+                maxlength="60"
+            >
+
+            <div class="modal-actions">
+
+                <button
+                    class="btn"
+                    onclick="closeModal()"
+                >
+                    Cancel
+                </button>
+
+                <button
+                    class="btn primary"
+                    onclick="
+                        confirmApprove(
+                            '${escapeHtml(id)}'
+                        )
+                    "
+                >
+                    Approve
+                </button>
+
+            </div>
+        `
+    );
 }
-function deleteDevice(id){
-    const del=getDeleted(); del[id]=true; write(STORAGE.deleted,del);
-    showToast("Device dipindahkan ke Deleted. Backend delete akan dihubungkan berikutnya.");
-    renderAll();
+
+async function confirmApprove(id) {
+
+    const input =
+        document.getElementById(
+            "modalInput"
+        );
+
+    const displayName =
+        input?.value.trim() || "";
+
+    try {
+
+        const response =
+            await fetch(
+                `${API_URL}/api/registration-approve`,
+                {
+                    method: "POST",
+
+                    headers: {
+                        "Content-Type":
+                            "application/json"
+                    },
+
+                    body:
+                        JSON.stringify({
+                            deviceId: id,
+                            displayName
+                        })
+                }
+            );
+
+        const data =
+            await response.json();
+
+        if (!response.ok || !data.ok) {
+
+            throw new Error(
+                data.error ||
+                `HTTP ${response.status}`
+            );
+        }
+
+        closeModal();
+
+        showToast(
+            "Device berhasil di-register."
+        );
+
+        await loadDevices();
+
+        setPhoneTab(
+            "registered"
+        );
+
+    } catch (error) {
+
+        console.error(
+            error
+        );
+
+        showToast(
+            "Gagal approve: " +
+            error.message
+        );
+    }
 }
-function restoreDevice(id){
-    const del=getDeleted(); delete del[id]; write(STORAGE.deleted,del);
-    showToast("Device dipulihkan.");
-    renderAll();
+
+
+// =====================================================
+// REJECT REQUEST
+// =====================================================
+
+async function rejectRequest(id) {
+
+    openModal(
+        "Reject Registration",
+        `
+            <p>
+                Request ini akan ditolak
+                dan device akan dihapus dari
+                daftar registration.
+                APK harus Request Register lagi.
+            </p>
+
+            <div class="modal-actions">
+
+                <button
+                    class="btn"
+                    onclick="closeModal()"
+                >
+                    Cancel
+                </button>
+
+                <button
+                    class="btn danger"
+                    onclick="
+                        confirmReject(
+                            '${escapeHtml(id)}'
+                        )
+                    "
+                >
+                    Reject
+                </button>
+
+            </div>
+        `
+    );
 }
-function permanentDeleteLocal(id){
-    const del=getDeleted(); delete del[id]; write(STORAGE.deleted,del);
-    const reg=getRegistered(); delete reg[id]; write(STORAGE.registered,reg);
-    const req=getRequests(); delete req[id]; write(STORAGE.requests,req);
-    const names=getNames(); delete names[id]; write(STORAGE.names,names);
-    const map=getCategoryMap(); delete map[id]; write(STORAGE.categoryMap,map);
-    showToast("Device dihapus dari data dashboard lokal.");
-    renderAll();
+
+async function confirmReject(id) {
+
+    try {
+
+        const response =
+            await fetch(
+                `${API_URL}/api/registration-delete`,
+                {
+                    method: "POST",
+
+                    headers: {
+                        "Content-Type":
+                            "application/json"
+                    },
+
+                    body:
+                        JSON.stringify({
+                            deviceId: id
+                        })
+                }
+            );
+
+        const data =
+            await response.json();
+
+        if (!response.ok || !data.ok) {
+
+            throw new Error(
+                data.error ||
+                `HTTP ${response.status}`
+            );
+        }
+
+        closeModal();
+
+        showToast(
+            "Registration request ditolak."
+        );
+
+        await loadDevices();
+
+        setPhoneTab(
+            "requests"
+        );
+
+    } catch (error) {
+
+        console.error(
+            error
+        );
+
+        showToast(
+            "Gagal reject: " +
+            error.message
+        );
+    }
 }
-function renameDevice(event,id){
+
+
+// =====================================================
+// DELETE REGISTERED DEVICE
+// =====================================================
+
+async function deleteDevice(id) {
+
+    openModal(
+        "Delete Device",
+        `
+            <p>
+                Device akan dihapus dari
+                Cloudflare.
+            </p>
+
+            <p>
+                Setelah dihapus, device
+                <b>harus Request Register lagi
+                dari APK</b> untuk masuk kembali.
+            </p>
+
+            <div class="modal-actions">
+
+                <button
+                    class="btn"
+                    onclick="closeModal()"
+                >
+                    Cancel
+                </button>
+
+                <button
+                    class="btn danger"
+                    onclick="
+                        confirmDeleteDevice(
+                            '${escapeHtml(id)}'
+                        )
+                    "
+                >
+                    Delete Device
+                </button>
+
+            </div>
+        `
+    );
+}
+
+async function confirmDeleteDevice(id) {
+
+    try {
+
+        const response =
+            await fetch(
+                `${API_URL}/api/registration-delete`,
+                {
+                    method: "POST",
+
+                    headers: {
+                        "Content-Type":
+                            "application/json"
+                    },
+
+                    body:
+                        JSON.stringify({
+                            deviceId: id
+                        })
+                }
+            );
+
+        const data =
+            await response.json();
+
+        if (!response.ok || !data.ok) {
+
+            throw new Error(
+                data.error ||
+                `HTTP ${response.status}`
+            );
+        }
+
+        closeModal();
+
+        showToast(
+            "Device dihapus. APK harus Request Register lagi."
+        );
+
+        await loadDevices();
+
+    } catch (error) {
+
+        console.error(
+            error
+        );
+
+        showToast(
+            "Gagal delete: " +
+            error.message
+        );
+    }
+}
+
+
+// =====================================================
+// RENAME DEVICE
+// =====================================================
+
+function renameDevice(
+    event,
+    id
+) {
+
     event.stopPropagation();
-    const old=deviceName(devices.find(d=>d.id===id));
-    openModal("Rename Phone",`
-        <p>Nama ini hanya mengubah nama tampilan. Model asli dan Device ID tetap.</p>
-        <label class="form-label">Phone Name</label>
-        <input class="input" id="modalInput" value="${escapeHtml(old)}" maxlength="60">
-        <div class="modal-actions"><button class="btn" onclick="closeModal()">Cancel</button><button class="btn primary" onclick="saveRename('${escapeHtml(id)}')">Save</button></div>
-    `);
+
+    const device =
+        devices.find(
+            d => d.id === id
+        );
+
+    if (!device) {
+        return;
+    }
+
+    openModal(
+        "Rename Phone",
+        `
+            <p>
+                Nama ini hanya mengubah
+                nama tampilan.
+                Model asli dan Device ID
+                tetap.
+            </p>
+
+            <label class="form-label">
+                Phone Name
+            </label>
+
+            <input
+                class="input"
+                id="modalInput"
+                value="${escapeHtml(
+                    deviceName(device)
+                )}"
+                maxlength="60"
+            >
+
+            <div class="modal-actions">
+
+                <button
+                    class="btn"
+                    onclick="closeModal()"
+                >
+                    Cancel
+                </button>
+
+                <button
+                    class="btn primary"
+                    onclick="
+                        saveRename(
+                            '${escapeHtml(id)}'
+                        )
+                    "
+                >
+                    Save
+                </button>
+
+            </div>
+        `
+    );
 }
-function saveRename(id){
-    const value=document.getElementById("modalInput").value.trim();
-    if(!value)return;
-    const names=getNames();names[id]=value;write(STORAGE.names,names);
-    closeModal();renderAll();showToast("Nama phone disimpan.");
+
+async function saveRename(id) {
+
+    const input =
+        document.getElementById(
+            "modalInput"
+        );
+
+    const displayName =
+        input?.value.trim() || "";
+
+    if (!displayName) {
+        return;
+    }
+
+    try {
+
+        const response =
+            await fetch(
+                `${API_URL}/api/device-rename`,
+                {
+                    method: "POST",
+
+                    headers: {
+                        "Content-Type":
+                            "application/json"
+                    },
+
+                    body:
+                        JSON.stringify({
+                            deviceId: id,
+                            displayName
+                        })
+                }
+            );
+
+        const data =
+            await response.json();
+
+        if (!response.ok || !data.ok) {
+
+            throw new Error(
+                data.error ||
+                `HTTP ${response.status}`
+            );
+        }
+
+        closeModal();
+
+        showToast(
+            "Nama phone disimpan."
+        );
+
+        await loadDevices();
+
+    } catch (error) {
+
+        console.error(
+            error
+        );
+
+        showToast(
+            "Gagal rename: " +
+            error.message
+        );
+    }
 }
-function openCategoryModal(){
-    openModal("Add Category",`
-        <p>Buat folder baru untuk mengelompokkan registered phone.</p>
-        <label class="form-label">Category Name</label>
-        <input class="input" id="modalInput" placeholder="Contoh: Samsung / Testing / Kasir" maxlength="40">
-        <div class="modal-actions"><button class="btn" onclick="closeModal()">Cancel</button><button class="btn primary" onclick="saveCategory()">Create</button></div>
-    `);
+
+
+// =====================================================
+// CATEGORY
+// =====================================================
+
+function openCategoryModal() {
+
+    openModal(
+        "Add Category",
+        `
+            <p>
+                Buat folder baru untuk
+                mengelompokkan registered phone.
+            </p>
+
+            <label class="form-label">
+                Category Name
+            </label>
+
+            <input
+                class="input"
+                id="modalInput"
+                placeholder="Contoh: Samsung / Testing / Kasir"
+                maxlength="40"
+            >
+
+            <div class="modal-actions">
+
+                <button
+                    class="btn"
+                    onclick="closeModal()"
+                >
+                    Cancel
+                </button>
+
+                <button
+                    class="btn primary"
+                    onclick="saveCategory()"
+                >
+                    Create
+                </button>
+
+            </div>
+        `
+    );
 }
-function saveCategory(){
-    const value=document.getElementById("modalInput").value.trim();
-    if(!value)return;
-    const cats=getCategories();
-    if(cats.some(c=>c.name.toLowerCase()===value.toLowerCase())){showToast("Nama kategori sudah ada.");return;}
-    cats.push({id:"cat-"+Date.now(),name:value,system:false});
-    write(STORAGE.categories,cats);closeModal();renderAll();showToast("Category dibuat.");
+
+function saveCategory() {
+
+    const input =
+        document.getElementById(
+            "modalInput"
+        );
+
+    const value =
+        input?.value.trim() || "";
+
+    if (!value) {
+        return;
+    }
+
+    const categories =
+        getCategories();
+
+    if (
+        categories.some(
+            c =>
+                c.name.toLowerCase() ===
+                value.toLowerCase()
+        )
+    ) {
+
+        showToast(
+            "Nama kategori sudah ada."
+        );
+
+        return;
+    }
+
+    categories.push({
+        id:
+            "cat-" +
+            Date.now(),
+
+        name:
+            value,
+
+        system:
+            false
+    });
+
+    write(
+        STORAGE.categories,
+        categories
+    );
+
+    closeModal();
+
+    renderAll();
+
+    showToast(
+        "Category dibuat."
+    );
 }
-function deleteCategory(event,id){
+
+function deleteCategory(
+    event,
+    id
+) {
+
     event.stopPropagation();
-    if(id==="no-category")return;
-    const cat=getCategories().find(x=>x.id===id);
-    if(!cat)return;
-    openModal("Hapus Category",`
-        <p>Category <b>${escapeHtml(cat.name)}</b> akan dihapus. Phone di dalamnya tidak ikut terhapus dan otomatis dipindahkan ke <b>No Category</b>.</p>
-        <div class="modal-actions"><button class="btn" onclick="closeModal()">Cancel</button><button class="btn danger" onclick="confirmDeleteCategory('${escapeHtml(id)}')">Delete Category</button></div>
-    `);
+
+    if (
+        id ===
+        "no-category"
+    ) {
+        return;
+    }
+
+    const category =
+        getCategories().find(
+            x =>
+                x.id === id
+        );
+
+    if (!category) {
+        return;
+    }
+
+    openModal(
+        "Hapus Category",
+        `
+            <p>
+                Category
+                <b>${escapeHtml(
+                    category.name
+                )}</b>
+                akan dihapus.
+            </p>
+
+            <p>
+                Phone di dalamnya tidak ikut
+                terhapus dan otomatis pindah
+                ke <b>No Category</b>.
+            </p>
+
+            <div class="modal-actions">
+
+                <button
+                    class="btn"
+                    onclick="closeModal()"
+                >
+                    Cancel
+                </button>
+
+                <button
+                    class="btn danger"
+                    onclick="
+                        confirmDeleteCategory(
+                            '${escapeHtml(id)}'
+                        )
+                    "
+                >
+                    Delete Category
+                </button>
+
+            </div>
+        `
+    );
 }
-function confirmDeleteCategory(id){
-    const cats=getCategories().filter(x=>x.id!==id);write(STORAGE.categories,cats);
-    const map=getCategoryMap();
-    Object.keys(map).forEach(deviceId=>{if(map[deviceId]===id)map[deviceId]="no-category";});
-    write(STORAGE.categoryMap,map);closeModal();renderAll();showToast("Category dihapus. Phone dipindahkan ke No Category.");
+
+function confirmDeleteCategory(id) {
+
+    const categories =
+        getCategories().filter(
+            x =>
+                x.id !== id
+        );
+
+    write(
+        STORAGE.categories,
+        categories
+    );
+
+    const map =
+        getCategoryMap();
+
+    Object.keys(map)
+        .forEach(
+            deviceId => {
+
+                if (
+                    map[deviceId] ===
+                    id
+                ) {
+                    map[deviceId] =
+                        "no-category";
+                }
+
+            }
+        );
+
+    write(
+        STORAGE.categoryMap,
+        map
+    );
+
+    closeModal();
+
+    renderAll();
+
+    showToast(
+        "Category dihapus. Phone dipindahkan ke No Category."
+    );
 }
-function openCategory(id){
-    openPage("phones");
-    const list=devices.filter(d=>!isDeleted(d.id)&&isRegistered(d.id)&&deviceCategory(d.id)===id);
-    document.getElementById("phoneSearch").value="";
-    phoneTab="registered";
-    document.querySelectorAll(".tab").forEach(x=>x.classList.remove("active"));
-    document.getElementById("tabRegistered").classList.add("active");
-    document.getElementById("phonesHeading").textContent=categoryName(id);
-    const grid=document.getElementById("phoneGrid");
-    if(!list.length){grid.innerHTML=`<div class="empty" style="grid-column:1/-1"><strong>Category kosong</strong>Belum ada registered phone di folder ini.</div>`;return;}
-    grid.innerHTML=list.map(d=>`
-        <div class="card phone-card">
-            <div class="card-top"><div class="phone-icon">📱</div><div class="status ${d.online?"online":"offline"}"><span class="dot ${d.online?"online":""}"></span>${d.online?"Online":"Offline"}</div></div>
-            <div class="card-name">${escapeHtml(deviceName(d))}<button class="edit-name" onclick="renameDevice(event,'${escapeHtml(d.id)}')">✎</button></div>
-            <div class="model">${escapeHtml(d.model||"Unknown")}</div>
-            <span class="category-pill">📁 ${escapeHtml(categoryName(id))}</span>
-            <div class="card-actions"><button class="btn small" onclick="openViewer('${escapeHtml(d.id)}')">Open Phone</button><button class="btn danger small" onclick="deleteDevice('${escapeHtml(d.id)}')">Delete</button></div>
-        </div>`).join("");
+
+function openCategory(id) {
+
+    openPage(
+        "phones"
+    );
+
+    phoneTab =
+        "registered";
+
+    document
+        .querySelectorAll(
+            ".tab"
+        )
+        .forEach(
+            x =>
+                x.classList.remove(
+                    "active"
+                )
+        );
+
+    document
+        .getElementById(
+            "tabRegistered"
+        )
+        .classList.add(
+            "active"
+        );
+
+    document
+        .getElementById(
+            "phonesHeading"
+        )
+        .textContent =
+        categoryName(id);
+
+    document
+        .getElementById(
+            "phoneSearch"
+        )
+        .value = "";
+
+    const grid =
+        document.getElementById(
+            "phoneGrid"
+        );
+
+    const list =
+        devices.filter(
+            d =>
+                isRegistered(d) &&
+                deviceCategory(
+                    d.id
+                ) === id
+        );
+
+    if (!list.length) {
+
+        grid.innerHTML = `
+            <div
+                class="empty"
+                style="grid-column:1/-1"
+            >
+                <strong>
+                    Category kosong
+                </strong>
+
+                Belum ada registered
+                phone di folder ini.
+            </div>
+        `;
+
+        return;
+    }
+
+    grid.innerHTML =
+        list
+            .map(d => {
+
+                const online =
+                    d.online === true;
+
+                return `
+                    <div
+                        class="card phone-card"
+                    >
+
+                        <div class="card-top">
+
+                            <div
+                                class="phone-icon"
+                            >
+                                📱
+                            </div>
+
+                            <div
+                                class="status ${
+                                    online
+                                        ? "online"
+                                        : "offline"
+                                }"
+                            >
+                                <span
+                                    class="dot ${
+                                        online
+                                            ? "online"
+                                            : ""
+                                    }"
+                                ></span>
+
+                                ${
+                                    online
+                                        ? "Online"
+                                        : "Offline"
+                                }
+
+                            </div>
+
+                        </div>
+
+                        <div
+                            class="card-name"
+                        >
+
+                            ${escapeHtml(
+                                deviceName(d)
+                            )}
+
+                            <button
+                                class="edit-name"
+                                onclick="
+                                    renameDevice(
+                                        event,
+                                        '${escapeHtml(d.id)}'
+                                    )
+                                "
+                            >
+                                ✎
+                            </button>
+
+                        </div>
+
+                        <div
+                            class="model"
+                        >
+                            ${escapeHtml(
+                                d.model ||
+                                "Unknown"
+                            )}
+                        </div>
+
+                        <span
+                            class="category-pill"
+                        >
+                            📁
+                            ${escapeHtml(
+                                categoryName(id)
+                            )}
+                        </span>
+
+                        <div
+                            class="card-actions"
+                        >
+
+                            <button
+                                class="btn small"
+                                onclick="
+                                    openViewer(
+                                        '${escapeHtml(d.id)}'
+                                    )
+                                "
+                            >
+                                Open Phone
+                            </button>
+
+                            <button
+                                class="btn danger small"
+                                onclick="
+                                    deleteDevice(
+                                        '${escapeHtml(d.id)}'
+                                    )
+                                "
+                            >
+                                Delete
+                            </button>
+
+                        </div>
+
+                    </div>
+                `;
+            })
+            .join("");
 }
-function openViewer(id){
-    const d=devices.find(x=>x.id===id);if(!d)return;
-    selectedDevice=d;
-    openPage("viewer");
-    document.getElementById("viewerName").textContent=deviceName(d);
-    document.getElementById("viewerSub").textContent=`${d.model||"Android"} • ${d.id}`;
-    document.getElementById("viewerStatus").innerHTML=`<span class="dot ${d.online?"online":""}"></span>${d.online?"Online":"Offline"}`;
+
+
+// =====================================================
+// VIEWER
+// =====================================================
+
+function openViewer(id) {
+
+    const device =
+        devices.find(
+            d =>
+                d.id === id
+        );
+
+    if (!device) {
+        return;
+    }
+
+    selectedDevice =
+        device;
+
+    openPage(
+        "viewer"
+    );
+
+    document
+        .getElementById(
+            "viewerName"
+        )
+        .textContent =
+        deviceName(device);
+
+    document
+        .getElementById(
+            "viewerSub"
+        )
+        .textContent =
+        `${
+            device.model ||
+            "Android"
+        } • ${device.id}`;
+
+    document
+        .getElementById(
+            "viewerStatus"
+        )
+        .innerHTML = `
+            <span
+                class="dot ${
+                    device.online
+                        ? "online"
+                        : ""
+                }"
+            ></span>
+
+            ${
+                device.online
+                    ? "Online"
+                    : "Offline"
+            }
+        `;
 }
-function openPage(page){
-    document.querySelectorAll(".page").forEach(x=>x.classList.remove("active"));
-    const el=document.getElementById("page-"+page);if(el)el.classList.add("active");
-    document.querySelectorAll(".nav button").forEach(x=>x.classList.toggle("active",x.dataset.page===page));
-    const titles={
-        dashboard:["Dashboard","Kelola phone, kategori, device dan file dari satu tempat."],
-        phones:["Phones","Registered phones dan registration requests."],
-        devices:["Devices","Semua device yang terlihat oleh sistem."],
-        files:["Files","File manager untuk pengembangan berikutnya."],
-        settings:["Settings","Pengaturan dashboard."],
-        viewer:["Phone Viewer","Remote control viewer."]
+
+
+// =====================================================
+// PAGE NAVIGATION
+// =====================================================
+
+function openPage(page) {
+
+    document
+        .querySelectorAll(
+            ".page"
+        )
+        .forEach(
+            x =>
+                x.classList.remove(
+                    "active"
+                )
+        );
+
+    const pageElement =
+        document.getElementById(
+            "page-" +
+            page
+        );
+
+    if (pageElement) {
+        pageElement.classList.add(
+            "active"
+        );
+    }
+
+    document
+        .querySelectorAll(
+            ".nav button"
+        )
+        .forEach(
+            button =>
+                button.classList.toggle(
+                    "active",
+                    button.dataset.page ===
+                    page
+                )
+        );
+
+    const titles = {
+
+        dashboard: [
+            "Dashboard",
+            "Kelola phone, kategori, device dan file dari satu tempat."
+        ],
+
+        phones: [
+            "Phones",
+            "Registered phones dan registration requests."
+        ],
+
+        devices: [
+            "Devices",
+            "Registered device yang sudah di-approve."
+        ],
+
+        files: [
+            "Files",
+            "File manager untuk pengembangan berikutnya."
+        ],
+
+        settings: [
+            "Settings",
+            "Pengaturan dashboard."
+        ],
+
+        viewer: [
+            "Phone Viewer",
+            "Remote control viewer."
+        ]
+
     };
-    document.getElementById("pageTitle").textContent=titles[page][0];
-    document.getElementById("pageSubtitle").textContent=titles[page][1];
-    if(page==="phones"){setPhoneTab(phoneTab);}
-}
-document.querySelectorAll(".nav button").forEach(b=>b.addEventListener("click",()=>openPage(b.dataset.page)));
 
-function openModal(title,body){
-    document.getElementById("modalBox").innerHTML=`<h3>${title}</h3>${body}`;
-    document.getElementById("modalBackdrop").classList.add("show");
-    setTimeout(()=>document.getElementById("modalInput")?.focus(),50);
+    document
+        .getElementById(
+            "pageTitle"
+        )
+        .textContent =
+        titles[page][0];
+
+    document
+        .getElementById(
+            "pageSubtitle"
+        )
+        .textContent =
+        titles[page][1];
+
+    if (
+        page ===
+        "phones"
+    ) {
+        setPhoneTab(
+            phoneTab
+        );
+    }
 }
-function closeModal(){document.getElementById("modalBackdrop").classList.remove("show")}
-function backdropClose(e){if(e.target.id==="modalBackdrop")closeModal()}
+
+
+// =====================================================
+// NAV BUTTONS
+// =====================================================
+
+document
+    .querySelectorAll(
+        ".nav button"
+    )
+    .forEach(
+        button => {
+
+            button.addEventListener(
+                "click",
+                () =>
+                    openPage(
+                        button.dataset.page
+                    )
+            );
+
+        }
+    );
+
+
+// =====================================================
+// MODAL
+// =====================================================
+
+function openModal(
+    title,
+    body
+) {
+
+    document
+        .getElementById(
+            "modalBox"
+        )
+        .innerHTML =
+        `<h3>${title}</h3>${body}`;
+
+    document
+        .getElementById(
+            "modalBackdrop"
+        )
+        .classList.add(
+            "show"
+        );
+
+    setTimeout(
+        () =>
+            document
+                .getElementById(
+                    "modalInput"
+                )
+                ?.focus(),
+        50
+    );
+}
+
+function closeModal() {
+
+    document
+        .getElementById(
+            "modalBackdrop"
+        )
+        .classList.remove(
+            "show"
+        );
+}
+
+function backdropClose(event) {
+
+    if (
+        event.target.id ===
+        "modalBackdrop"
+    ) {
+        closeModal();
+    }
+}
+
+
+// =====================================================
+// TOAST
+// =====================================================
 
 let toastTimer;
-function showToast(message){
-    const el=document.getElementById("toast");el.textContent=message;el.style.display="block";
-    clearTimeout(toastTimer);toastTimer=setTimeout(()=>el.style.display="none",2800);
-}
-function toggleRefresh(){
-    autoRefresh=!autoRefresh;
-    document.getElementById("refreshSwitch").classList.toggle("on",autoRefresh);
-    if(autoRefresh){startRefresh();showToast("Auto refresh aktif.");}
-    else{clearInterval(refreshTimer);showToast("Auto refresh dimatikan.");}
-}
-function startRefresh(){
-    clearInterval(refreshTimer);
-    if(autoRefresh)refreshTimer=setInterval(loadDevices,5000);
-}
-function clearLocalData(){
-    openModal("Reset Dashboard Data",`
-        <p>Ini akan menghapus registration, nama custom, kategori dan deleted state yang tersimpan di browser ini. Data Cloudflare tidak dihapus.</p>
-        <div class="modal-actions"><button class="btn" onclick="closeModal()">Cancel</button><button class="btn danger" onclick="doClearLocalData()">Reset Local Data</button></div>
-    `);
-}
-function doClearLocalData(){
-    Object.values(STORAGE).forEach(k=>localStorage.removeItem(k));
-    closeModal();location.reload();
+
+function showToast(
+    message
+) {
+
+    const element =
+        document.getElementById(
+            "toast"
+        );
+
+    element.textContent =
+        message;
+
+    element.style.display =
+        "block";
+
+    clearTimeout(
+        toastTimer
+    );
+
+    toastTimer =
+        setTimeout(
+            () =>
+                element.style.display =
+                    "none",
+            2800
+        );
 }
 
-/*
-    UI registration flow:
-    APK -> Request Register -> Worker stores request -> Dashboard Register Requests
-       -> Admin Approve -> device becomes Registered
-       -> Admin can rename / assign category / delete
-*/
-(function init(){
-    if(!localStorage.getItem(STORAGE.categories))write(STORAGE.categories,[{id:"no-category",name:"No Category",system:true}]);
+
+// =====================================================
+// AUTO REFRESH
+// =====================================================
+
+function toggleRefresh() {
+
+    autoRefresh =
+        !autoRefresh;
+
+    document
+        .getElementById(
+            "refreshSwitch"
+        )
+        .classList.toggle(
+            "on",
+            autoRefresh
+        );
+
+    if (autoRefresh) {
+
+        startRefresh();
+
+        showToast(
+            "Auto refresh aktif."
+        );
+
+    } else {
+
+        clearInterval(
+            refreshTimer
+        );
+
+        showToast(
+            "Auto refresh dimatikan."
+        );
+    }
+}
+
+function startRefresh() {
+
+    clearInterval(
+        refreshTimer
+    );
+
+    if (autoRefresh) {
+
+        refreshTimer =
+            setInterval(
+                loadDevices,
+                5000
+            );
+    }
+}
+
+
+// =====================================================
+// RESET LOCAL CATEGORY DATA
+// =====================================================
+
+function clearLocalData() {
+
+    openModal(
+        "Reset Dashboard Data",
+        `
+            <p>
+                Ini hanya menghapus kategori
+                dan pengaturan kategori yang
+                tersimpan di browser.
+            </p>
+
+            <p>
+                <b>
+                    Data device Cloudflare
+                    tidak akan dihapus.
+                </b>
+            </p>
+
+            <div class="modal-actions">
+
+                <button
+                    class="btn"
+                    onclick="closeModal()"
+                >
+                    Cancel
+                </button>
+
+                <button
+                    class="btn danger"
+                    onclick="doClearLocalData()"
+                >
+                    Reset Local Data
+                </button>
+
+            </div>
+        `
+    );
+}
+
+function doClearLocalData() {
+
+    localStorage.removeItem(
+        STORAGE.categories
+    );
+
+    localStorage.removeItem(
+        STORAGE.categoryMap
+    );
+
+    closeModal();
+
+    location.reload();
+}
+
+
+// =====================================================
+// INITIALIZE
+// =====================================================
+
+(function init() {
+
+    if (
+        !localStorage.getItem(
+            STORAGE.categories
+        )
+    ) {
+
+        write(
+            STORAGE.categories,
+            [
+                {
+                    id:
+                        "no-category",
+
+                    name:
+                        "No Category",
+
+                    system:
+                        true
+                }
+            ]
+        );
+    }
+
     loadDevices();
+
     startRefresh();
+
 })();
 </script>
 </body>
