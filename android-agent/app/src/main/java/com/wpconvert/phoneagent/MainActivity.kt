@@ -14,12 +14,16 @@ import android.view.WindowManager
 import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.TextView
+import org.json.JSONObject
+import java.net.HttpURLConnection
+import java.net.URL
 
 class MainActivity : Activity() {
 
     private lateinit var status: TextView
     private lateinit var captureButton: Button
     private lateinit var brightnessButton: Button
+    private lateinit var registerButton: Button
 
     // WebSocket
     private lateinit var webSocket: WebSocketClientManager
@@ -201,6 +205,17 @@ class MainActivity : Activity() {
                 }
             }
 
+        registerButton =
+            Button(this).apply {
+
+                text =
+                    "Request Register"
+
+                setOnClickListener {
+                    requestRegistration()
+                }
+            }
+
         captureButton =
             Button(this).apply {
 
@@ -253,6 +268,8 @@ class MainActivity : Activity() {
 
         root.addView(brightnessButton)
 
+        root.addView(registerButton)
+
         root.addView(captureButton)
 
         setContentView(root)
@@ -260,6 +277,136 @@ class MainActivity : Activity() {
         handler.post(
             statusPoll
         )
+    }
+
+    private fun requestRegistration() {
+
+        registerButton.isEnabled = false
+        registerButton.text = "Mengirim request..."
+
+        Thread {
+            try {
+                val deviceId =
+                    Settings.Secure.getString(
+                        contentResolver,
+                        Settings.Secure.ANDROID_ID
+                    )
+
+                val body =
+                    JSONObject().apply {
+                        put("deviceId", deviceId)
+                        put("name", "Web Phone Agent")
+                        put("model", Build.MODEL)
+                    }.toString()
+
+                val connection =
+                    URL(
+                        "https://web-phone-oneforall.danip4848.workers.dev/api/register-request"
+                    ).openConnection()
+                        as HttpURLConnection
+
+                connection.requestMethod = "POST"
+                connection.setRequestProperty(
+                    "Content-Type",
+                    "application/json"
+                )
+                connection.setRequestProperty(
+                    "Accept",
+                    "application/json"
+                )
+                connection.connectTimeout = 15000
+                connection.readTimeout = 15000
+                connection.doOutput = true
+
+                connection.outputStream.use {
+                    it.write(
+                        body.toByteArray(
+                            Charsets.UTF_8
+                        )
+                    )
+                }
+
+                val responseCode =
+                    connection.responseCode
+
+                val responseText =
+                    if (responseCode in 200..299) {
+                        connection.inputStream
+                            .bufferedReader()
+                            .use { it.readText() }
+                    } else {
+                        connection.errorStream
+                            ?.bufferedReader()
+                            ?.use { it.readText() }
+                            ?: "HTTP $responseCode"
+                    }
+
+                val response =
+                    JSONObject(responseText)
+
+                val ok =
+                    response.optBoolean(
+                        "ok",
+                        false
+                    )
+
+                val responseStatus =
+                    response.optString(
+                        "status",
+                        ""
+                    )
+
+                runOnUiThread {
+                    registerButton.isEnabled = true
+
+                    if (ok) {
+                        registerButton.text =
+                            when (responseStatus) {
+                                "registered" ->
+                                    "Sudah Registered"
+                                "pending" ->
+                                    "Request Terkirim"
+                                else ->
+                                    "Request Register"
+                            }
+
+                        status.text =
+                            when (responseStatus) {
+                                "registered" ->
+                                    "Status: Device sudah Registered"
+                                "pending" ->
+                                    "Status: Menunggu approval dashboard"
+                                else ->
+                                    "Status: Request berhasil"
+                            }
+                    } else {
+                        registerButton.text =
+                            "Request Register"
+
+                        status.text =
+                            "Status: Gagal request register"
+                    }
+                }
+
+                connection.disconnect()
+
+            } catch (error: Exception) {
+                android.util.Log.e(
+                    "WebPhoneAgent",
+                    "Gagal Request Register",
+                    error
+                )
+
+                runOnUiThread {
+                    registerButton.isEnabled = true
+                    registerButton.text =
+                        "Request Register"
+
+                    status.text =
+                        "Status: Gagal menghubungi server"
+                }
+            }
+        }.start()
     }
 
     private fun openWriteSettingsPermission() {
