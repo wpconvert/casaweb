@@ -2350,659 +2350,412 @@ function openCategory(id) {
 // VIEWER
 // =====================================================
 
+let viewerRunId = 0;
+let viewerStatsTimer = null;
+
+function setViewerStatus(text, online = false) {
+    const el = document.getElementById("viewerStatus");
+    if (!el) return;
+    el.innerHTML = `<span class="dot ${online ? "online" : ""}"></span>${escapeHtml(text)}`;
+}
+
+function setViewerMessage(text, html = false) {
+    const el = document.getElementById("viewerMessage");
+    if (!el) return;
+    el.style.display = "block";
+    if (html) el.innerHTML = text;
+    else el.textContent = text;
+}
+
 function openViewer(id) {
+    const device = devices.find(d => d.id === id);
+    if (!device) return;
 
-    const device =
-        devices.find(
-            d => d.id === id
-        );
+    selectedDevice = device;
+    openPage("viewer");
 
-    if (!device) {
-        return;
-    }
+    document.getElementById("viewerName").textContent = deviceName(device);
+    document.getElementById("viewerSub").textContent = `${device.model || "Android"} • ${device.id}`;
+    setViewerStatus(device.online ? "Online" : "Offline", device.online === true);
 
-    selectedDevice =
-        device;
-
-    openPage(
-        "viewer"
-    );
-
-    document
-        .getElementById(
-            "viewerName"
-        )
-        .textContent =
-        deviceName(device);
-
-    document
-        .getElementById(
-            "viewerSub"
-        )
-        .textContent =
-        `${device.model || "Android"} • ${device.id}`;
-
-    document
-        .getElementById(
-            "viewerStatus"
-        )
-        .innerHTML = `
-            <span
-                class="dot ${
-                    device.online
-                        ? "online"
-                        : ""
-                }"
-            ></span>
-
-            ${
-                device.online
-                    ? "Online"
-                    : "Offline"
-            }
-        `;
-
-    startViewerStream(
-        device.id
-    );
+    startViewerStream(device.id);
 }
 
+function waitForIceGatheringComplete(pc, timeoutMs = 8000) {
+    if (pc.iceGatheringState === "complete") return Promise.resolve();
 
-async function waitForIceGatheringComplete(
-    pc
-) {
+    return new Promise(resolve => {
+        let done = false;
 
-    if (
-        pc.iceGatheringState ===
-        "complete"
-    ) {
-        return;
-    }
+        const finish = () => {
+            if (done) return;
+            done = true;
+            clearTimeout(timer);
+            pc.removeEventListener("icegatheringstatechange", check);
+            resolve();
+        };
 
-    await new Promise(
-        resolve => {
+        const check = () => {
+            console.log("[Viewer] iceGatheringState:", pc.iceGatheringState);
+            if (pc.iceGatheringState === "complete") finish();
+        };
 
-            const timeout =
-                setTimeout(
-                    resolve,
-                    5000
-                );
+        const timer = setTimeout(() => {
+            console.warn("[Viewer] ICE gathering timeout:", pc.iceGatheringState);
+            finish();
+        }, timeoutMs);
 
-            pc.addEventListener(
-                "icegatheringstatechange",
-                () => {
-
-                    if (
-                        pc.iceGatheringState ===
-                        "complete"
-                    ) {
-
-                        clearTimeout(
-                            timeout
-                        );
-
-                        resolve();
-                    }
-                }
-            );
-
-        }
-    );
+        pc.addEventListener("icegatheringstatechange", check);
+    });
 }
 
+function startViewerStats(pc, runId) {
+    clearInterval(viewerStatsTimer);
 
-async function startViewerStream(
-    deviceId
-) {
+    viewerStatsTimer = setInterval(async () => {
+        if (runId !== viewerRunId || pc !== viewerPeerConnection) return;
+        if (pc.connectionState === "closed") return;
 
-    stopViewerStream();
+        try {
+            const stats = await pc.getStats();
+            let inboundVideo = null;
+            let inboundPackets = null;
+            let inboundBytes = null;
+            let framesDecoded = null;
+            let framesReceived = null;
+            let candidatePair = null;
 
-    const video =
-        document.getElementById(
-            "phoneVideo"
-        );
-
-    const message =
-        document.getElementById(
-            "viewerMessage"
-        );
-
-    const viewerStatus =
-        document.getElementById(
-            "viewerStatus"
-        );
-
-    if (
-        !video ||
-        !message
-    ) {
-        return;
-    }
-
-    video.classList.remove(
-        "active"
-    );
-
-    video.srcObject =
-        null;
-
-    message.style.display =
-        "block";
-
-    message.innerHTML =
-        "Menghubungkan ke live screen...";
-
-    if (viewerStatus) {
-
-        viewerStatus.innerHTML = `
-            <span class="dot"></span>
-            Connecting
-        `;
-    }
-
-    try {
-
-        // =====================================================
-        // 1. CREATE RECEIVER SESSION
-        // =====================================================
-
-        const sessionResponse =
-            await fetch(
-                `${API_URL}/api/session`,
-                {
-                    method: "POST",
-
-                    headers: {
-                        "Content-Type":
-                            "application/json"
-                    },
-
-                    body: "{}"
+            stats.forEach(report => {
+                if (report.type === "inbound-rtp" && report.kind === "video") {
+                    inboundVideo = report;
+                    inboundPackets = report.packetsReceived ?? null;
+                    inboundBytes = report.bytesReceived ?? null;
+                    framesDecoded = report.framesDecoded ?? null;
+                    framesReceived = report.framesReceived ?? null;
                 }
-            );
 
-        if (
-            !sessionResponse.ok
-        ) {
-
-            throw new Error(
-                `Session HTTP ${sessionResponse.status}`
-            );
-        }
-
-        const sessionData =
-            await sessionResponse.json();
-
-        viewerSessionId =
-            sessionData.sessionId;
-
-        if (!viewerSessionId) {
-
-            throw new Error(
-                "Cloudflare sessionId tidak ditemukan."
-            );
-        }
-
-
-        // =====================================================
-        // 2. CREATE RECEIVING PEER CONNECTION
-        // =====================================================
-
-        const pc =
-            new RTCPeerConnection({
-                iceServers: [
-                    {
-                        urls:
-                            "stun:stun.cloudflare.com:3478"
-                    }
-                ]
+                if (report.type === "candidate-pair" && report.state === "succeeded") {
+                    candidatePair = report;
+                }
             });
 
-        viewerPeerConnection =
-            pc;
+            console.log("[Viewer] WEBRTC STATS", {
+                connectionState: pc.connectionState,
+                iceConnectionState: pc.iceConnectionState,
+                iceGatheringState: pc.iceGatheringState,
+                signalingState: pc.signalingState,
+                inboundVideo: !!inboundVideo,
+                packetsReceived: inboundPackets,
+                bytesReceived: inboundBytes,
+                framesReceived,
+                framesDecoded,
+                selectedCandidatePair: candidatePair ? {
+                    localCandidateId: candidatePair.localCandidateId,
+                    remoteCandidateId: candidatePair.remoteCandidateId,
+                    currentRoundTripTime: candidatePair.currentRoundTripTime
+                } : null
+            });
+        } catch (error) {
+            console.warn("[Viewer] getStats error:", error);
+        }
+    }, 2000);
+}
 
+async function startViewerStream(deviceId) {
+    const runId = ++viewerRunId;
+    stopViewerStream();
 
-        // =====================================================
-        // 3. RECEIVE TRACK FROM CLOUDFLARE
-        // =====================================================
+    const video = document.getElementById("phoneVideo");
+    const message = document.getElementById("viewerMessage");
 
-        pc.ontrack =
-            event => {
+    if (!video || !message) return;
 
-                console.log(
-                    "[Viewer] ontrack:",
-                    event.track.kind,
-                    event.track.readyState
-                );
+    video.classList.remove("active");
+    video.srcObject = null;
+    setViewerMessage("Menghubungkan ke live screen...");
+    setViewerStatus("Connecting", false);
 
-                const stream =
-                    event.streams?.[0] ||
-                    new MediaStream();
+    try {
+        console.log("[Viewer] ===== START VIEWER =====");
+        console.log("[Viewer] deviceId:", deviceId);
 
-                if (
-                    !event.streams?.[0]
-                ) {
+        // 1. Create subscriber session.
+        const sessionResponse = await fetch(`${API_URL}/api/session`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: "{}",
+            cache: "no-store"
+        });
 
-                    stream.addTrack(
-                        event.track
-                    );
-                }
-
-                viewerStream =
-                    stream;
-
-                video.srcObject =
-                    stream;
-
-                video.classList.add(
-                    "active"
-                );
-
-                message.style.display =
-                    "none";
-
-                if (viewerStatus) {
-
-                    viewerStatus.innerHTML = `
-                        <span
-                            class="dot online"
-                        ></span>
-
-                        Screen Live
-                    `;
-                }
-
-                event.track.onunmute =
-                    () => {
-
-                        console.log(
-                            "[Viewer] video track unmuted"
-                        );
-
-                        video.play()
-                            .catch(
-                                error =>
-                                    console.warn(
-                                        "[Viewer] play:",
-                                        error
-                                    )
-                            );
-                    };
-
-                video.play()
-                    .catch(
-                        error =>
-                            console.warn(
-                                "[Viewer] autoplay:",
-                                error
-                            )
-                    );
-            };
-
-
-        video.onloadedmetadata =
-            () => {
-
-                console.log(
-                    "[Viewer] video metadata loaded",
-                    video.videoWidth,
-                    video.videoHeight
-                );
-            };
-
-
-        video.onplaying =
-            () => {
-
-                console.log(
-                    "[Viewer] video playing",
-                    video.videoWidth,
-                    video.videoHeight
-                );
-            };
-
-
-        video.onerror =
-            () => {
-
-                console.error(
-                    "[Viewer] video error",
-                    video.error
-                );
-            };
-
-
-        pc.onconnectionstatechange =
-            () => {
-
-                console.log(
-                    "[Viewer] connectionState:",
-                    pc.connectionState
-                );
-
-                if (
-                    pc.connectionState ===
-                    "connected"
-                ) {
-
-                    message.style.display =
-                        "none";
-
-                    if (viewerStatus) {
-
-                        viewerStatus.innerHTML = `
-                            <span
-                                class="dot online"
-                            ></span>
-
-                            WebRTC Connected
-                        `;
-                    }
-
-                } else if (
-                    pc.connectionState ===
-                        "failed" ||
-
-                    pc.connectionState ===
-                        "disconnected" ||
-
-                    pc.connectionState ===
-                        "closed"
-                ) {
-
-                    message.style.display =
-                        "block";
-
-                    message.textContent =
-                        "Koneksi live screen terputus.";
-
-                    if (viewerStatus) {
-
-                        viewerStatus.innerHTML = `
-                            <span
-                                class="dot"
-                            ></span>
-
-                            WebRTC Disconnected
-                        `;
-                    }
-                }
-            };
-
-
-        pc.oniceconnectionstatechange =
-            () => {
-
-                console.log(
-                    "[Viewer] iceConnectionState:",
-                    pc.iceConnectionState
-                );
-            };
-
-
-        pc.onsignalingstatechange =
-            () => {
-
-                console.log(
-                    "[Viewer] signalingState:",
-                    pc.signalingState
-                );
-            };
-
-
-        // =====================================================
-        // IMPORTANT
-        //
-        // Cloudflare remote-track subscription:
-        // browser TIDAK membuat offer.
-        //
-        // Cloudflare membuat OFFER.
-        // Browser menerima OFFER,
-        // membuat ANSWER,
-        // kemudian mengirim ANSWER ke renegotiate.
-        // =====================================================
-
-        pc.addTransceiver(
-            "video",
-            {
-                direction:
-                    "recvonly"
-            }
-        );
-
-
-        // =====================================================
-        // 4. ASK CLOUDFLARE FOR REMOTE TRACK
-        // =====================================================
-
-        const subscribeResponse =
-            await fetch(
-                `${API_URL}/api/subscribe`,
-                {
-                    method: "POST",
-
-                    headers: {
-                        "Content-Type":
-                            "application/json"
-                    },
-
-                    body:
-                        JSON.stringify({
-                            sessionId:
-                                viewerSessionId,
-
-                            deviceId
-                        })
-                }
-            );
-
-
-        const subscribeData =
-            await subscribeResponse.json();
-
-
-        if (
-            !subscribeResponse.ok
-        ) {
-
-            throw new Error(
-                subscribeData.error ||
-                `Subscribe HTTP ${subscribeResponse.status}`
-            );
+        const sessionData = await sessionResponse.json();
+        if (!sessionResponse.ok) {
+            throw new Error(sessionData.error || `Session HTTP ${sessionResponse.status}`);
         }
 
+        viewerSessionId = sessionData.sessionId;
+        if (!viewerSessionId) {
+            throw new Error("Cloudflare sessionId tidak ditemukan.");
+        }
+
+        console.log("[Viewer] subscriber session:", viewerSessionId);
+
+        // 2. Create browser receiver PeerConnection.
+        const pc = new RTCPeerConnection({
+            iceServers: [
+                { urls: "stun:stun.cloudflare.com:3478" },
+                { urls: "stun:stun.l.google.com:19302" }
+            ],
+            bundlePolicy: "max-bundle",
+            rtcpMuxPolicy: "require"
+        });
+
+        viewerPeerConnection = pc;
+
+        pc.ontrack = event => {
+            if (runId !== viewerRunId || pc !== viewerPeerConnection) return;
+
+            console.log("[Viewer] ontrack:", {
+                kind: event.track.kind,
+                id: event.track.id,
+                readyState: event.track.readyState,
+                muted: event.track.muted,
+                streams: event.streams?.length || 0
+            });
+
+            const stream = event.streams?.[0] || new MediaStream([event.track]);
+            viewerStream = stream;
+            video.srcObject = stream;
+            video.classList.add("active");
+            setViewerMessage("");
+            message.style.display = "none";
+            setViewerStatus("Screen Live", true);
+
+            event.track.onunmute = () => {
+                console.log("[Viewer] video track unmuted");
+                video.play().catch(error => console.warn("[Viewer] play:", error));
+            };
+
+            event.track.onmute = () => console.warn("[Viewer] video track muted");
+            event.track.onended = () => console.warn("[Viewer] video track ended");
+
+            video.play().catch(error => console.warn("[Viewer] autoplay:", error));
+        };
+
+        pc.onicecandidate = event => {
+            if (event.candidate) {
+                console.log("[Viewer] local ICE candidate:", {
+                    type: event.candidate.type,
+                    protocol: event.candidate.protocol,
+                    address: event.candidate.address,
+                    port: event.candidate.port,
+                    candidate: event.candidate.candidate
+                });
+            } else {
+                console.log("[Viewer] local ICE gathering finished");
+            }
+        };
+
+        pc.onicecandidateerror = event => {
+            console.warn("[Viewer] ICE candidate error:", {
+                url: event.url,
+                errorCode: event.errorCode,
+                errorText: event.errorText,
+                address: event.address,
+                port: event.port
+            });
+        };
+
+        pc.onicegatheringstatechange = () => {
+            console.log("[Viewer] iceGatheringState:", pc.iceGatheringState);
+        };
+
+        pc.oniceconnectionstatechange = () => {
+            console.log("[Viewer] iceConnectionState:", pc.iceConnectionState);
+        };
+
+        pc.onsignalingstatechange = () => {
+            console.log("[Viewer] signalingState:", pc.signalingState);
+        };
+
+        pc.onconnectionstatechange = () => {
+            console.log("[Viewer] connectionState:", pc.connectionState);
+
+            if (pc.connectionState === "connected") {
+                message.style.display = "none";
+                setViewerStatus("WebRTC Connected", true);
+            } else if (["failed", "disconnected", "closed"].includes(pc.connectionState)) {
+                setViewerMessage("Koneksi live screen terputus.");
+                setViewerStatus("WebRTC Disconnected", false);
+            }
+        };
+
+        pc.onnegotiationneeded = () => {
+            console.log("[Viewer] negotiationneeded");
+        };
+
+        video.onloadedmetadata = () => {
+            console.log("[Viewer] loadedmetadata:", video.videoWidth, video.videoHeight);
+        };
+
+        video.onplaying = () => {
+            console.log("[Viewer] playing:", video.videoWidth, video.videoHeight);
+        };
+
+        video.onwaiting = () => console.warn("[Viewer] video waiting");
+        video.onstalled = () => console.warn("[Viewer] video stalled");
+        video.onerror = () => console.error("[Viewer] video error:", video.error);
+
+        // 3. Browser only receives the Cloudflare-published video track.
+        const transceiver = pc.addTransceiver("video", { direction: "recvonly" });
+        console.log("[Viewer] receiver transceiver:", {
+            mid: transceiver.mid,
+            direction: transceiver.direction,
+            currentDirection: transceiver.currentDirection
+        });
+
+        // 4. Ask Cloudflare to attach the remote publisher track.
+        const subscribeResponse = await fetch(`${API_URL}/api/subscribe`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                sessionId: viewerSessionId,
+                deviceId
+            }),
+            cache: "no-store"
+        });
+
+        const subscribeData = await subscribeResponse.json();
+        if (!subscribeResponse.ok) {
+            throw new Error(subscribeData.error || `Subscribe HTTP ${subscribeResponse.status}`);
+        }
 
         const cloudflareOffer =
             subscribeData?.sessionDescription ||
-            subscribeData?.cloudflare?.sessionDescription;
+            subscribeData?.cloudflare?.sessionDescription ||
+            null;
 
-
-        if (
-            !cloudflareOffer?.sdp
-        ) {
-
-            throw new Error(
-                "Cloudflare tidak mengembalikan SDP offer subscriber."
-            );
+        if (!cloudflareOffer?.sdp) {
+            throw new Error("Cloudflare tidak mengembalikan SDP offer subscriber.");
         }
 
+        console.log("[Viewer] Cloudflare offer diterima");
+        console.log("[Viewer] Cloudflare offer SDP:\n", cloudflareOffer.sdp);
 
-        console.log(
-            "[Viewer] Cloudflare offer diterima"
-        );
+        // 5. Cloudflare sends the offer. Browser must answer it.
+        await pc.setRemoteDescription(new RTCSessionDescription({
+            type: "offer",
+            sdp: cloudflareOffer.sdp
+        }));
 
+        console.log("[Viewer] remoteDescription set:", pc.remoteDescription?.type);
 
-        // =====================================================
-        // 5. APPLY CLOUDFLARE OFFER
-        // =====================================================
+        // 6. Create browser answer.
+        const answer = await pc.createAnswer();
+        await pc.setLocalDescription(answer);
 
-        await pc.setRemoteDescription(
-            new RTCSessionDescription({
-                type:
-                    "offer",
+        console.log("[Viewer] local answer created");
+        console.log("[Viewer] localDescription type:", pc.localDescription?.type);
+        console.log("[Viewer] local SDP BEFORE ICE:\n", pc.localDescription?.sdp || "");
 
-                sdp:
-                    cloudflareOffer.sdp
-            })
-        );
+        // 7. Wait for local ICE candidates to be gathered.
+        await waitForIceGatheringComplete(pc, 8000);
 
-
-        // =====================================================
-        // 6. CREATE BROWSER ANSWER
-        // =====================================================
-
-        const answer =
-            await pc.createAnswer();
-
-        await pc.setLocalDescription(
-            answer
-        );
-
-
-        // =====================================================
-        // 7. WAIT FOR ICE GATHERING
-        // =====================================================
-
-        await waitForIceGatheringComplete(
-            pc
-        );
-
-
-        const localAnswerSdp =
-            pc.localDescription?.sdp;
-
-
-        if (
-            !localAnswerSdp
-        ) {
-
-            throw new Error(
-                "Browser tidak menghasilkan SDP answer."
-            );
+        const localAnswerSdp = pc.localDescription?.sdp || "";
+        if (!localAnswerSdp) {
+            throw new Error("Browser tidak menghasilkan SDP answer.");
         }
 
+        console.log("[Viewer] local SDP AFTER ICE:\n", localAnswerSdp);
+        console.log("[Viewer] remote SDP:\n", pc.remoteDescription?.sdp || "");
 
-        // =====================================================
-        // 8. SEND ANSWER TO CLOUDFLARE
-        // =====================================================
+        // 8. Send browser answer back to Cloudflare.
+        const renegotiateResponse = await fetch(`${API_URL}/api/renegotiate`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                sessionId: viewerSessionId,
+                sdp: localAnswerSdp
+            }),
+            cache: "no-store"
+        });
 
-        const renegotiateResponse =
-            await fetch(
-                `${API_URL}/api/renegotiate`,
-                {
-                    method: "PUT",
-
-                    headers: {
-                        "Content-Type":
-                            "application/json"
-                    },
-
-                    body:
-                        JSON.stringify({
-                            sessionId:
-                                viewerSessionId,
-
-                            sdp:
-                                localAnswerSdp
-                        })
-                }
-            );
-
-
-        const renegotiateData =
-            await renegotiateResponse.json();
-
-
-        if (
-            !renegotiateResponse.ok
-        ) {
-
+        const renegotiateData = await renegotiateResponse.json();
+        if (!renegotiateResponse.ok) {
             throw new Error(
                 renegotiateData.error ||
                 `Renegotiate HTTP ${renegotiateResponse.status}`
             );
         }
 
+        console.log("[Viewer] Cloudflare renegotiate berhasil", renegotiateData);
+        setViewerMessage("Menunggu video dari phone...");
 
-        console.log(
-            "[Viewer] Cloudflare renegotiate berhasil"
-        );
+        // 9. Keep stats running so we can see whether RTP packets arrive.
+        startViewerStats(pc, runId);
 
-
-        message.textContent =
-            "Menunggu video dari phone...";
-
+        // 10. Print a complete immediate state snapshot.
+        console.log("[Viewer] FINAL STATE", {
+            connectionState: pc.connectionState,
+            iceConnectionState: pc.iceConnectionState,
+            iceGatheringState: pc.iceGatheringState,
+            signalingState: pc.signalingState,
+            localType: pc.localDescription?.type,
+            remoteType: pc.remoteDescription?.type,
+            transceivers: pc.getTransceivers().map(t => ({
+                mid: t.mid,
+                direction: t.direction,
+                currentDirection: t.currentDirection,
+                receiverTrack: t.receiver?.track?.kind,
+                receiverReadyState: t.receiver?.track?.readyState
+            }))
+        });
 
     } catch (error) {
+        console.error("[Viewer] startViewerStream error:", error);
 
-        console.error(
-            "startViewerStream:",
-            error
+        if (runId !== viewerRunId) return;
+
+        setViewerMessage(
+            `Live screen belum bisa dibuka.<br><br>${escapeHtml(error?.message || "Unknown error")}`,
+            true
         );
-
-        message.style.display =
-            "block";
-
-        message.innerHTML =
-            `Live screen belum bisa dibuka.<br><br>${escapeHtml(
-                error?.message ||
-                "Unknown error"
-            )}`;
-
-        if (viewerStatus) {
-
-            viewerStatus.innerHTML = `
-                <span class="dot"></span>
-                WebRTC Error
-            `;
-        }
+        setViewerStatus("WebRTC Error", false);
     }
 }
 
-
 function stopViewerStream() {
+    clearInterval(viewerStatsTimer);
+    viewerStatsTimer = null;
 
-    if (
-        viewerPeerConnection
-    ) {
-
+    if (viewerPeerConnection) {
         try {
-
+            viewerPeerConnection.ontrack = null;
+            viewerPeerConnection.onicecandidate = null;
+            viewerPeerConnection.onicecandidateerror = null;
+            viewerPeerConnection.onicegatheringstatechange = null;
+            viewerPeerConnection.oniceconnectionstatechange = null;
+            viewerPeerConnection.onsignalingstatechange = null;
+            viewerPeerConnection.onconnectionstatechange = null;
+            viewerPeerConnection.onnegotiationneeded = null;
             viewerPeerConnection.close();
-
         } catch (_) {}
     }
 
-    viewerPeerConnection =
-        null;
+    viewerPeerConnection = null;
+    viewerStream = null;
+    viewerSessionId = null;
 
-    viewerStream =
-        null;
-
-    viewerSessionId =
-        null;
-
-
-    const video =
-        document.getElementById(
-            "phoneVideo"
-        );
-
+    const video = document.getElementById("phoneVideo");
     if (video) {
-
         video.pause();
-
-        video.srcObject =
-            null;
-
-        video.classList.remove(
-            "active"
-        );
+        video.srcObject = null;
+        video.classList.remove("active");
     }
 }
 
 
 // =====================================================
+
 // PAGE NAVIGATION
 // =====================================================
 
