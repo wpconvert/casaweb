@@ -331,7 +331,7 @@ tr:last-child td{border-bottom:0}
 
 <section class="page" id="page-phones">
     <div class="tabs">
-        <button class="tab active" id="tabRegistered" onclick="setPhoneTab('registered')">Registered</button>
+        <button class="tab active" id="tabRegistered" onclick="selectedCategoryId=null; setPhoneTab('registered')">Registered</button>
         <button class="tab" id="tabRequests" onclick="setPhoneTab('requests')">Register Requests</button>
         <button class="tab" id="tabDeleted" onclick="setPhoneTab('deleted')">Deleted</button>
     </div>
@@ -443,6 +443,7 @@ const API_URL =
 let devices = [];
 let registrationRequests = [];
 let phoneTab = "registered";
+let selectedCategoryId = null;
 let selectedDevice = null;
 let refreshTimer = null;
 let autoRefresh = true;
@@ -811,6 +812,10 @@ function setPhoneTab(tab) {
 
     phoneTab = tab;
 
+    if (tab !== "registered") {
+        selectedCategoryId = null;
+    }
+
     document
         .querySelectorAll(".tab")
         .forEach(
@@ -839,7 +844,7 @@ function setPhoneTab(tab) {
         )
         .textContent =
         tab === "registered"
-            ? "Registered Phones"
+            ? (selectedCategoryId !== null ? categoryName(selectedCategoryId) : "Registered Phones")
             : tab === "requests"
                 ? "Registration Requests"
                 : "Deleted Devices";
@@ -886,7 +891,11 @@ function renderPhones() {
         list =
             devices.filter(
                 d =>
-                    isRegistered(d)
+                    isRegistered(d) &&
+                    (
+                        selectedCategoryId === null ||
+                        deviceCategory(d.id) === selectedCategoryId
+                    )
             );
 
     } else if (
@@ -937,7 +946,9 @@ function renderPhones() {
                     ${
                         phoneTab ===
                         "registered"
-                            ? "Belum ada registered phone"
+                            ? selectedCategoryId !== null
+                                ? `Tidak ada phone di ${escapeHtml(categoryName(selectedCategoryId))}`
+                                : "Belum ada registered phone"
                             : phoneTab ===
                               "requests"
                                 ? "Belum ada registration request"
@@ -2134,12 +2145,12 @@ function confirmDeleteCategory(id) {
 
 function openCategory(id) {
 
+    selectedCategoryId = id;
+    phoneTab = "registered";
+
     openPage(
         "phones"
     );
-
-    phoneTab =
-        "registered";
 
     document
         .querySelectorAll(
