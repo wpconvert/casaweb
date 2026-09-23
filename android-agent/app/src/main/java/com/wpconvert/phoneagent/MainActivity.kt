@@ -43,25 +43,6 @@ class MainActivity : Activity() {
         )
     }
 
-    // Status 1 = registration lifecycle.
-    @Volatile
-    private var registrationStatus =
-        "unregistered"
-
-    private val registrationPoll =
-        object : Runnable {
-
-            override fun run() {
-
-                refreshRegistrationStatus()
-
-                handler.postDelayed(
-                    this,
-                    3000
-                )
-            }
-        }
-
     private val statusPoll =
         object : Runnable {
 
@@ -85,52 +66,23 @@ class MainActivity : Activity() {
                         0
                     )
 
-                val registrationText =
-                    when (registrationStatus) {
-                        "registered" ->
-                            "Registered"
+                if (active) {
 
-                        "requested",
-                        "pending" ->
-                            "Request Terkirim / Menunggu Approval"
+                    status.text =
+                        "Status: Screen capture aktif\n" +
+                        "${width} × ${height}"
 
-                        else ->
-                            "Belum Registered"
-                    }
-
-                val captureText =
-                    if (active) {
-                        "Aktif
-${width} × ${height}"
-                    } else {
-                        "Belum aktif"
-                    }
-
-                status.text =
-                    "Status 1 — Registration: $registrationText
-
-" +
-                    "Status 2 — Screen Capture: $captureText"
-
-                captureButton.text =
-                    if (active) {
+                    captureButton.text =
                         "Hentikan screen capture"
-                    } else {
+
+                } else {
+
+                    status.text =
+                        "Status: Menunggu izin screen capture"
+
+                    captureButton.text =
                         "Izinkan akses layar"
-                    }
-
-                registerButton.text =
-                    when (registrationStatus) {
-                        "registered" ->
-                            "Sudah Registered"
-
-                        "requested",
-                        "pending" ->
-                            "Request Terkirim"
-
-                        else ->
-                            "Request Register"
-                    }
+                }
 
                 handler.postDelayed(
                     this,
@@ -325,24 +277,15 @@ ${width} × ${height}"
         handler.post(
             statusPoll
         )
-
-        handler.post(
-            registrationPoll
-        )
     }
 
     private fun requestRegistration() {
 
-        registerButton.isEnabled =
-            false
-
-        registerButton.text =
-            "Mengirim request..."
+        registerButton.isEnabled = false
+        registerButton.text = "Mengirim request..."
 
         Thread {
-
             try {
-
                 val deviceId =
                     Settings.Secure.getString(
                         contentResolver,
@@ -351,48 +294,29 @@ ${width} × ${height}"
 
                 val body =
                     JSONObject().apply {
-                        put(
-                            "deviceId",
-                            deviceId
-                        )
-                        put(
-                            "name",
-                            "Web Phone Agent"
-                        )
-                        put(
-                            "model",
-                            Build.MODEL
-                        )
+                        put("deviceId", deviceId)
+                        put("name", "Web Phone Agent")
+                        put("model", Build.MODEL)
                     }.toString()
 
                 val connection =
                     URL(
-                        "https://web-phone-oneforall.danip4848.workers.dev/api/registration/request"
-                    )
-                        .openConnection()
+                        "https://web-phone-oneforall.danip4848.workers.dev/api/registration-request"
+                    ).openConnection()
                         as HttpURLConnection
 
-                connection.requestMethod =
-                    "POST"
-
+                connection.requestMethod = "POST"
                 connection.setRequestProperty(
                     "Content-Type",
                     "application/json"
                 )
-
                 connection.setRequestProperty(
                     "Accept",
                     "application/json"
                 )
-
-                connection.connectTimeout =
-                    15000
-
-                connection.readTimeout =
-                    15000
-
-                connection.doOutput =
-                    true
+                connection.connectTimeout = 15000
+                connection.readTimeout = 15000
+                connection.doOutput = true
 
                 connection.outputStream.use {
                     it.write(
@@ -406,27 +330,19 @@ ${width} × ${height}"
                     connection.responseCode
 
                 val responseText =
-                    if (
-                        responseCode in 200..299
-                    ) {
+                    if (responseCode in 200..299) {
                         connection.inputStream
                             .bufferedReader()
-                            .use {
-                                it.readText()
-                            }
+                            .use { it.readText() }
                     } else {
                         connection.errorStream
                             ?.bufferedReader()
-                            ?.use {
-                                it.readText()
-                            }
+                            ?.use { it.readText() }
                             ?: "HTTP $responseCode"
                     }
 
                 val response =
-                    JSONObject(
-                        responseText
-                    )
+                    JSONObject(responseText)
 
                 val ok =
                     response.optBoolean(
@@ -434,28 +350,47 @@ ${width} × ${height}"
                         false
                     )
 
-                if (ok) {
-                    registrationStatus =
-                        response.optString(
-                            "registrationStatus",
-                            "requested"
-                        )
-                }
-
-                android.util.Log.d(
-                    "WebPhoneAgent",
-                    "Registration response: $responseText"
-                )
+                val responseStatus =
+                    response.optString(
+                        "registrationStatus",
+                        ""
+                    )
 
                 runOnUiThread {
-                    registerButton.isEnabled =
-                        true
+                    registerButton.isEnabled = true
+
+                    if (ok) {
+                        registerButton.text =
+                            when (responseStatus) {
+                                "registered" ->
+                                    "Sudah Registered"
+                                "requested" ->
+                                    "Request Terkirim"
+                                else ->
+                                    "Request Register"
+                            }
+
+                        status.text =
+                            when (responseStatus) {
+                                "registered" ->
+                                    "Status: Device sudah Registered"
+                                "requested" ->
+                                    "Status: Menunggu approval dashboard"
+                                else ->
+                                    "Status: Request berhasil"
+                            }
+                    } else {
+                        registerButton.text =
+                            "Request Register"
+
+                        status.text =
+                            "Status: Gagal request register"
+                    }
                 }
 
                 connection.disconnect()
 
             } catch (error: Exception) {
-
                 android.util.Log.e(
                     "WebPhoneAgent",
                     "Gagal Request Register",
@@ -463,99 +398,16 @@ ${width} × ${height}"
                 )
 
                 runOnUiThread {
-                    registerButton.isEnabled =
-                        true
+                    registerButton.isEnabled = true
+                    registerButton.text =
+                        "Request Register"
+
+                    status.text =
+                        "Status: Gagal menghubungi server"
                 }
             }
-
         }.start()
     }
-
-    private fun refreshRegistrationStatus() {
-
-        Thread {
-
-            try {
-
-                val deviceId =
-                    Settings.Secure.getString(
-                        contentResolver,
-                        Settings.Secure.ANDROID_ID
-                    )
-
-                if (
-                    deviceId.isNullOrBlank()
-                ) {
-                    return@Thread
-                }
-
-                val url =
-                    "https://web-phone-oneforall.danip4848.workers.dev/api/registration/status" +
-                    "?deviceId=" +
-                    Uri.encode(
-                        deviceId
-                    )
-
-                val connection =
-                    URL(url)
-                        .openConnection()
-                        as HttpURLConnection
-
-                connection.requestMethod =
-                    "GET"
-
-                connection.setRequestProperty(
-                    "Accept",
-                    "application/json"
-                )
-
-                connection.connectTimeout =
-                    10000
-
-                connection.readTimeout =
-                    10000
-
-                val responseCode =
-                    connection.responseCode
-
-                if (
-                    responseCode !in 200..299
-                ) {
-                    connection.disconnect()
-                    return@Thread
-                }
-
-                val responseText =
-                    connection.inputStream
-                        .bufferedReader()
-                        .use {
-                            it.readText()
-                        }
-
-                val response =
-                    JSONObject(
-                        responseText
-                    )
-
-                registrationStatus =
-                    response.optString(
-                        "registrationStatus",
-                        "unregistered"
-                    )
-
-                connection.disconnect()
-
-            } catch (error: Exception) {
-
-                android.util.Log.d(
-                    "WebPhoneAgent",
-                    "Registration status poll gagal: ${error.message}"
-                )
-            }
-
-        }.start()
-    }
-
 
     private fun openWriteSettingsPermission() {
 
@@ -696,10 +548,6 @@ ${width} × ${height}"
 
         handler.removeCallbacks(
             statusPoll
-        )
-
-        handler.removeCallbacks(
-            registrationPoll
         )
 
         // =========================
