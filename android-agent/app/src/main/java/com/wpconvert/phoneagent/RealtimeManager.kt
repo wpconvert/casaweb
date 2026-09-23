@@ -6,7 +6,9 @@ import android.media.projection.MediaProjection
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
+
 import org.json.JSONObject
+
 import org.webrtc.IceCandidate
 import org.webrtc.MediaConstraints
 import org.webrtc.PeerConnection
@@ -17,9 +19,12 @@ import org.webrtc.SurfaceTextureHelper
 import org.webrtc.VideoFrame
 import org.webrtc.VideoSource
 import org.webrtc.VideoTrack
+
 import java.net.HttpURLConnection
 import java.net.URL
+
 import kotlin.concurrent.thread
+
 
 class RealtimeManager(
     private val context: Context
@@ -34,9 +39,10 @@ class RealtimeManager(
             "https://web-phone-oneforall.danip4848.workers.dev"
     }
 
-    // =====================================================
+
+    // =========================================================
     // WEBRTC
-    // =====================================================
+    // =========================================================
 
     private var peerConnectionFactory:
         PeerConnectionFactory? = null
@@ -56,9 +62,10 @@ class RealtimeManager(
     private var screenCapturer:
         ScreenCapturerAndroid? = null
 
-    // =====================================================
+
+    // =========================================================
     // STATE
-    // =====================================================
+    // =========================================================
 
     private var initialized =
         false
@@ -69,9 +76,10 @@ class RealtimeManager(
     private var currentSessionId:
         String? = null
 
-    // =====================================================
-    // FRAME MONITOR
-    // =====================================================
+
+    // =========================================================
+    // FRAME DEBUG
+    // =========================================================
 
     private var capturedFrameCount =
         0L
@@ -79,9 +87,16 @@ class RealtimeManager(
     private var firstFrameReceived =
         false
 
-    // =====================================================
-    // INITIALIZE WEBRTC
-    // =====================================================
+    private var lastFrameWidth =
+        0
+
+    private var lastFrameHeight =
+        0
+
+
+    // =========================================================
+    // INITIALIZE
+    // =========================================================
 
     fun initialize() {
 
@@ -114,8 +129,10 @@ class RealtimeManager(
                     .createInitializationOptions()
             )
 
+
             val eglBase =
                 org.webrtc.EglBase.create()
+
 
             val encoderFactory =
                 org.webrtc.DefaultVideoEncoderFactory(
@@ -124,10 +141,12 @@ class RealtimeManager(
                     true
                 )
 
+
             val decoderFactory =
                 org.webrtc.DefaultVideoDecoderFactory(
                     eglBase.eglBaseContext
                 )
+
 
             peerConnectionFactory =
                 PeerConnectionFactory
@@ -140,8 +159,10 @@ class RealtimeManager(
                     )
                     .createPeerConnectionFactory()
 
+
             initialized =
                 peerConnectionFactory != null
+
 
             if (initialized) {
 
@@ -166,13 +187,15 @@ class RealtimeManager(
                 e
             )
 
-            initialized = false
+            initialized =
+                false
         }
     }
 
-    // =====================================================
+
+    // =========================================================
     // START SCREEN CAPTURE
-    // =====================================================
+    // =========================================================
 
     fun startScreenCapture(
         resultCode: Int,
@@ -184,6 +207,7 @@ class RealtimeManager(
             initialize()
         }
 
+
         if (capturing) {
 
             Log.d(
@@ -193,6 +217,7 @@ class RealtimeManager(
 
             return
         }
+
 
         val factory =
             peerConnectionFactory
@@ -207,6 +232,7 @@ class RealtimeManager(
             return
         }
 
+
         try {
 
             Log.d(
@@ -214,12 +240,23 @@ class RealtimeManager(
                 "Menyiapkan WebRTC screen capture"
             )
 
+
             // =================================================
-            // RESET FRAME MONITOR
+            // RESET FRAME COUNTER
             // =================================================
 
-            capturedFrameCount = 0L
-            firstFrameReceived = false
+            capturedFrameCount =
+                0L
+
+            firstFrameReceived =
+                false
+
+            lastFrameWidth =
+                0
+
+            lastFrameHeight =
+                0
+
 
             // =================================================
             // EGL
@@ -227,6 +264,7 @@ class RealtimeManager(
 
             val eglBase =
                 org.webrtc.EglBase.create()
+
 
             // =================================================
             // SURFACE TEXTURE HELPER
@@ -238,14 +276,45 @@ class RealtimeManager(
                     eglBase.eglBaseContext
                 )
 
+
             // =================================================
             // VIDEO SOURCE
+            // =================================================
+            //
+            // PENTING:
+            //
+            // TRUE karena ini adalah SCREEN CAPTURE,
+            // bukan camera capture.
             // =================================================
 
             videoSource =
                 factory.createVideoSource(
-                    false
+                    true
                 )
+
+
+            val source =
+                videoSource
+
+            val helper =
+                surfaceTextureHelper
+
+
+            if (
+                source == null ||
+                helper == null
+            ) {
+
+                Log.e(
+                    TAG,
+                    "VideoSource atau SurfaceTextureHelper null"
+                )
+
+                stopScreenCapture()
+
+                return
+            }
+
 
             // =================================================
             // SCREEN CAPTURER
@@ -254,7 +323,8 @@ class RealtimeManager(
             screenCapturer =
                 ScreenCapturerAndroid(
                     projectionData,
-                    object : MediaProjection.Callback() {
+                    object :
+                        MediaProjection.Callback() {
 
                         override fun onStop() {
 
@@ -263,29 +333,22 @@ class RealtimeManager(
                                 "MediaProjection dihentikan Android"
                             )
 
-                            capturing = false
+                            capturing =
+                                false
                         }
                     }
                 )
 
+
             val capturer =
                 screenCapturer
 
-            val helper =
-                surfaceTextureHelper
 
-            val source =
-                videoSource
-
-            if (
-                capturer == null ||
-                helper == null ||
-                source == null
-            ) {
+            if (capturer == null) {
 
                 Log.e(
                     TAG,
-                    "Komponen screen capture tidak lengkap"
+                    "ScreenCapturerAndroid null"
                 )
 
                 stopScreenCapture()
@@ -293,27 +356,22 @@ class RealtimeManager(
                 return
             }
 
+
             // =================================================
             // CAPTURER OBSERVER
             // =================================================
             //
-            // Kita membungkus observer bawaan VideoSource.
+            // Kita tidak langsung memberikan observer
+            // VideoSource.
             //
-            // Tujuannya:
-            // MediaProjection
-            //      ↓
-            // ScreenCapturerAndroid
-            //      ↓
-            // CapturerObserver
-            //      ↓
-            // VideoSource
-            //
-            // Dengan ini kita bisa memastikan apakah frame
-            // benar-benar keluar dari ScreenCapturerAndroid.
+            // Kita bungkus supaya bisa melihat apakah
+            // ScreenCapturerAndroid benar-benar menghasilkan
+            // frame.
             // =================================================
 
-            val capturerObserver =
-                object : org.webrtc.CapturerObserver {
+            val observer =
+                object :
+                    org.webrtc.VideoCapturer.CapturerObserver {
 
                     override fun onCapturerStarted(
                         success: Boolean
@@ -331,11 +389,32 @@ class RealtimeManager(
                             )
                     }
 
+
+                    override fun onCapturerStopped() {
+
+                        Log.d(
+                            TAG,
+                            "CapturerObserver.onCapturerStopped"
+                        )
+
+                        source
+                            .capturerObserver
+                            .onCapturerStopped()
+                    }
+
+
                     override fun onFrameCaptured(
                         frame: VideoFrame
                     ) {
 
                         capturedFrameCount++
+
+                        lastFrameWidth =
+                            frame.buffer.width
+
+                        lastFrameHeight =
+                            frame.buffer.height
+
 
                         if (!firstFrameReceived) {
 
@@ -344,7 +423,7 @@ class RealtimeManager(
 
                             Log.d(
                                 TAG,
-                                "================================="
+                                "========================================"
                             )
 
                             Log.d(
@@ -354,22 +433,29 @@ class RealtimeManager(
 
                             Log.d(
                                 TAG,
-                                "Frame size: " +
+                                "Frame: " +
                                     "${frame.buffer.width}x" +
                                     "${frame.buffer.height}"
                             )
 
                             Log.d(
                                 TAG,
-                                "Frame rotation: " +
+                                "Rotation: " +
                                     frame.rotation
                             )
 
                             Log.d(
                                 TAG,
-                                "================================="
+                                "Timestamp: " +
+                                    frame.timestampNs
+                            )
+
+                            Log.d(
+                                TAG,
+                                "========================================"
                             )
                         }
+
 
                         if (
                             capturedFrameCount % 30L == 0L
@@ -383,6 +469,11 @@ class RealtimeManager(
                             )
                         }
 
+
+                        // =====================================
+                        // TERUSKAN FRAME KE WEBRTC VIDEO SOURCE
+                        // =====================================
+
                         source
                             .capturerObserver
                             .onFrameCaptured(
@@ -390,28 +481,71 @@ class RealtimeManager(
                             )
                     }
 
-                    override fun onCapturerStopped() {
 
-                        Log.d(
-                            TAG,
-                            "CapturerObserver.onCapturerStopped"
-                        )
+                    // =================================================
+                    // COMPATIBILITY UNTUK VERSI WEBRTC LAMA
+                    // =================================================
+
+                    @Suppress("DEPRECATION")
+                    override fun onByteBufferFrameCaptured(
+                        data: ByteArray,
+                        width: Int,
+                        height: Int,
+                        rotation: Int,
+                        timeStamp: Long
+                    ) {
 
                         source
                             .capturerObserver
-                            .onCapturerStopped()
+                            .onByteBufferFrameCaptured(
+                                data,
+                                width,
+                                height,
+                                rotation,
+                                timeStamp
+                            )
+                    }
+
+
+                    @Suppress("DEPRECATION")
+                    override fun onTextureFrameCaptured(
+                        width: Int,
+                        height: Int,
+                        oesTextureId: Int,
+                        transformMatrix: FloatArray,
+                        rotation: Int,
+                        timestamp: Long
+                    ) {
+
+                        source
+                            .capturerObserver
+                            .onTextureFrameCaptured(
+                                width,
+                                height,
+                                oesTextureId,
+                                transformMatrix,
+                                rotation,
+                                timestamp
+                            )
                     }
                 }
+
 
             // =================================================
             // INITIALIZE CAPTURER
             // =================================================
 
+            Log.d(
+                TAG,
+                "Menginisialisasi ScreenCapturerAndroid"
+            )
+
             capturer.initialize(
                 helper,
                 context.applicationContext,
-                capturerObserver
+                observer
             )
+
 
             // =================================================
             // START CAPTURE
@@ -428,6 +562,7 @@ class RealtimeManager(
                 30
             )
 
+
             // =================================================
             // VIDEO TRACK
             // =================================================
@@ -438,9 +573,41 @@ class RealtimeManager(
                     source
                 )
 
+
             videoTrack?.setEnabled(
                 true
             )
+
+
+            // =================================================
+            // FORCE OUTPUT FORMAT
+            // =================================================
+
+            try {
+
+                source.adaptOutputFormat(
+                    720,
+                    1600,
+                    30
+                )
+
+                Log.d(
+                    TAG,
+                    "VideoSource output format: 720x1600 @ 30 FPS"
+                )
+
+            } catch (e: Exception) {
+
+                Log.w(
+                    TAG,
+                    "adaptOutputFormat gagal: ${e.message}"
+                )
+            }
+
+
+            capturing =
+                true
+
 
             Log.d(
                 TAG,
@@ -453,12 +620,11 @@ class RealtimeManager(
                     (videoTrack?.enabled() ?: false)
             )
 
-            capturing = true
-
             Log.d(
                 TAG,
                 "Screen capture berhasil dimulai"
             )
+
 
         } catch (e: SecurityException) {
 
@@ -482,9 +648,10 @@ class RealtimeManager(
         }
     }
 
-    // =====================================================
-    // PEER CONNECTION
-    // =====================================================
+
+    // =========================================================
+    // CREATE PEER CONNECTION
+    // =========================================================
 
     fun createPeerConnection() {
 
@@ -492,6 +659,7 @@ class RealtimeManager(
 
             initialize()
         }
+
 
         if (peerConnection != null) {
 
@@ -502,6 +670,7 @@ class RealtimeManager(
 
             return
         }
+
 
         val factory =
             peerConnectionFactory
@@ -516,11 +685,8 @@ class RealtimeManager(
             return
         }
 
-        try {
 
-            // =================================================
-            // STUN
-            // =================================================
+        try {
 
             val iceServers =
                 listOf(
@@ -531,18 +697,17 @@ class RealtimeManager(
                         .createIceServer()
                 )
 
+
             val configuration =
                 PeerConnection.RTCConfiguration(
                     iceServers
                 )
 
+
             configuration.sdpSemantics =
                 PeerConnection.SdpSemantics
                     .UNIFIED_PLAN
 
-            // =================================================
-            // PEER CONNECTION
-            // =================================================
 
             peerConnection =
                 factory.createPeerConnection(
@@ -561,6 +726,7 @@ class RealtimeManager(
                             )
                         }
 
+
                         override fun onIceConnectionChange(
                             state:
                                 PeerConnection.IceConnectionState
@@ -572,6 +738,7 @@ class RealtimeManager(
                             )
                         }
 
+
                         override fun onIceConnectionReceivingChange(
                             receiving: Boolean
                         ) {
@@ -581,6 +748,7 @@ class RealtimeManager(
                                 "ICE receiving: $receiving"
                             )
                         }
+
 
                         override fun onIceGatheringChange(
                             state:
@@ -593,6 +761,7 @@ class RealtimeManager(
                             )
                         }
 
+
                         override fun onIceCandidate(
                             candidate:
                                 IceCandidate
@@ -603,6 +772,7 @@ class RealtimeManager(
                                 "ICE candidate received"
                             )
                         }
+
 
                         override fun onIceCandidatesRemoved(
                             candidates:
@@ -615,6 +785,7 @@ class RealtimeManager(
                             )
                         }
 
+
                         override fun onAddStream(
                             stream:
                                 org.webrtc.MediaStream
@@ -625,6 +796,7 @@ class RealtimeManager(
                                 "Remote stream ditambahkan"
                             )
                         }
+
 
                         override fun onRemoveStream(
                             stream:
@@ -637,6 +809,7 @@ class RealtimeManager(
                             )
                         }
 
+
                         override fun onDataChannel(
                             dataChannel:
                                 org.webrtc.DataChannel
@@ -648,6 +821,7 @@ class RealtimeManager(
                             )
                         }
 
+
                         override fun onRenegotiationNeeded() {
 
                             Log.d(
@@ -655,6 +829,7 @@ class RealtimeManager(
                                 "Renegotiation diperlukan"
                             )
                         }
+
 
                         override fun onAddTrack(
                             receiver:
@@ -669,6 +844,7 @@ class RealtimeManager(
                             )
                         }
 
+
                         override fun onTrack(
                             transceiver:
                                 org.webrtc.RtpTransceiver
@@ -679,6 +855,7 @@ class RealtimeManager(
                                 "Transceiver track diterima"
                             )
                         }
+
 
                         override fun onIceCandidateError(
                             event:
@@ -692,6 +869,7 @@ class RealtimeManager(
                             )
                         }
 
+
                         override fun onSelectedCandidatePairChanged(
                             event:
                                 org.webrtc.CandidatePairChangeEvent
@@ -702,6 +880,7 @@ class RealtimeManager(
                                 "Selected candidate pair berubah"
                             )
                         }
+
 
                         override fun onConnectionChange(
                             newState:
@@ -716,6 +895,7 @@ class RealtimeManager(
                     }
                 )
 
+
             if (peerConnection == null) {
 
                 Log.e(
@@ -726,10 +906,12 @@ class RealtimeManager(
                 return
             }
 
+
             Log.d(
                 TAG,
                 "PeerConnection berhasil dibuat"
             )
+
 
             // =================================================
             // ADD SCREEN TRACK
@@ -756,6 +938,7 @@ class RealtimeManager(
                 )
             }
 
+
         } catch (e: Exception) {
 
             Log.e(
@@ -766,9 +949,10 @@ class RealtimeManager(
         }
     }
 
-    // =====================================================
+
+    // =========================================================
     // CREATE OFFER
-    // =====================================================
+    // =========================================================
 
     fun createOffer(
         callback:
@@ -790,6 +974,7 @@ class RealtimeManager(
             return
         }
 
+
         val constraints =
             MediaConstraints().apply {
 
@@ -808,6 +993,7 @@ class RealtimeManager(
                 )
             }
 
+
         connection.createOffer(
             object :
                 org.webrtc.SdpObserver {
@@ -822,6 +1008,7 @@ class RealtimeManager(
                         "SDP Offer berhasil dibuat"
                     )
 
+
                     connection.setLocalDescription(
                         object :
                             org.webrtc.SdpObserver {
@@ -832,12 +1019,14 @@ class RealtimeManager(
                             ) {
                             }
 
+
                             override fun onSetSuccess() {
 
                                 Log.d(
                                     TAG,
                                     "Local SDP berhasil diset"
                                 )
+
 
                                 waitForIceGatheringComplete(
                                     connection
@@ -857,21 +1046,25 @@ class RealtimeManager(
                                         return@waitForIceGatheringComplete
                                     }
 
+
                                     Log.d(
                                         TAG,
                                         "ICE gathering selesai"
                                     )
+
 
                                     Log.d(
                                         TAG,
                                         "Mengirim SDP final yang sudah berisi ICE candidate"
                                     )
 
+
                                     callback(
                                         finalDescription
                                     )
                                 }
                             }
+
 
                             override fun onCreateFailure(
                                 error: String
@@ -884,6 +1077,7 @@ class RealtimeManager(
 
                                 callback(null)
                             }
+
 
                             override fun onSetFailure(
                                 error: String
@@ -901,8 +1095,10 @@ class RealtimeManager(
                     )
                 }
 
+
                 override fun onSetSuccess() {
                 }
+
 
                 override fun onCreateFailure(
                     error: String
@@ -916,6 +1112,7 @@ class RealtimeManager(
                     callback(null)
                 }
 
+
                 override fun onSetFailure(
                     error: String
                 ) {
@@ -925,9 +1122,10 @@ class RealtimeManager(
         )
     }
 
-    // =====================================================
-    // WAIT ICE GATHERING COMPLETE
-    // =====================================================
+
+    // =========================================================
+    // WAIT ICE
+    // =========================================================
 
     private fun waitForIceGatheringComplete(
         connection: PeerConnection,
@@ -952,27 +1150,34 @@ class RealtimeManager(
             return
         }
 
+
         val handler =
             Handler(
                 Looper.getMainLooper()
             )
 
+
         val startTime =
             System.currentTimeMillis()
+
 
         val timeoutMs =
             10000L
 
+
         val checkRunnable =
-            object : Runnable {
+            object :
+                Runnable {
 
                 override fun run() {
 
                     val state =
                         connection.iceGatheringState()
 
+
                     val localDescription =
                         connection.localDescription
+
 
                     if (
                         state ==
@@ -991,9 +1196,11 @@ class RealtimeManager(
                         return
                     }
 
+
                     val elapsed =
                         System.currentTimeMillis() -
                             startTime
+
 
                     if (
                         elapsed >= timeoutMs
@@ -1011,6 +1218,7 @@ class RealtimeManager(
                         return
                     }
 
+
                     handler.postDelayed(
                         this,
                         50L
@@ -1018,14 +1226,16 @@ class RealtimeManager(
                 }
             }
 
+
         handler.post(
             checkRunnable
         )
     }
 
-    // =====================================================
+
+    // =========================================================
     // CREATE CLOUDFLARE SESSION
-    // =====================================================
+    // =========================================================
 
     fun createCloudflareSession(
         callback:
@@ -1041,6 +1251,7 @@ class RealtimeManager(
             "Meminta Cloudflare session baru"
         )
 
+
         thread {
 
             try {
@@ -1050,28 +1261,36 @@ class RealtimeManager(
                         "$WORKER_URL/api/session"
                     )
 
-                val connectionHttp =
+
+                val connection =
                     url.openConnection()
                         as HttpURLConnection
 
-                connectionHttp.requestMethod =
+
+                connection.requestMethod =
                     "POST"
 
-                connectionHttp.setRequestProperty(
+
+                connection.setRequestProperty(
                     "Accept",
                     "application/json"
                 )
 
-                connectionHttp.connectTimeout =
+
+                connection.connectTimeout =
                     15000
 
-                connectionHttp.readTimeout =
+
+                connection.readTimeout =
                     30000
 
-                connectionHttp.doOutput =
+
+                connection.doOutput =
                     true
 
-                connectionHttp.outputStream.use {
+
+                connection.outputStream.use {
+
                     it.write(
                         "{}".toByteArray(
                             Charsets.UTF_8
@@ -1079,16 +1298,17 @@ class RealtimeManager(
                     )
                 }
 
+
                 val responseCode =
-                    connectionHttp.responseCode
+                    connection.responseCode
+
 
                 val responseText =
                     if (
                         responseCode in 200..299
                     ) {
 
-                        connectionHttp
-                            .inputStream
+                        connection.inputStream
                             .bufferedReader()
                             .use {
                                 it.readText()
@@ -1096,8 +1316,7 @@ class RealtimeManager(
 
                     } else {
 
-                        connectionHttp
-                            .errorStream
+                        connection.errorStream
                             ?.bufferedReader()
                             ?.use {
                                 it.readText()
@@ -1105,15 +1324,18 @@ class RealtimeManager(
                             ?: "HTTP $responseCode"
                     }
 
+
                 Log.d(
                     TAG,
                     "Session response code: $responseCode"
                 )
 
+
                 Log.d(
                     TAG,
                     "Session response: $responseText"
                 )
+
 
                 if (
                     responseCode !in 200..299
@@ -1125,21 +1347,24 @@ class RealtimeManager(
                         responseText
                     )
 
-                    connectionHttp.disconnect()
+                    connection.disconnect()
 
                     return@thread
                 }
+
 
                 val json =
                     JSONObject(
                         responseText
                     )
 
+
                 val sessionId =
                     json.optString(
                         "sessionId",
                         ""
                     )
+
 
                 if (
                     sessionId.isEmpty()
@@ -1151,18 +1376,21 @@ class RealtimeManager(
                         "Cloudflare tidak mengembalikan sessionId: $responseText"
                     )
 
-                    connectionHttp.disconnect()
+                    connection.disconnect()
 
                     return@thread
                 }
 
+
                 currentSessionId =
                     sessionId
+
 
                 Log.d(
                     TAG,
                     "Cloudflare session berhasil: $sessionId"
                 )
+
 
                 callback(
                     true,
@@ -1170,7 +1398,9 @@ class RealtimeManager(
                     null
                 )
 
-                connectionHttp.disconnect()
+
+                connection.disconnect()
+
 
             } catch (e: Exception) {
 
@@ -1179,6 +1409,7 @@ class RealtimeManager(
                     "Gagal membuat Cloudflare session",
                     e
                 )
+
 
                 callback(
                     false,
@@ -1190,9 +1421,10 @@ class RealtimeManager(
         }
     }
 
-    // =====================================================
-    // PUBLISH CLOUDFLARE
-    // =====================================================
+
+    // =========================================================
+    // PUBLISH TO CLOUDFLARE
+    // =========================================================
 
     fun publishToCloudflare(
         sessionId: String,
@@ -1207,6 +1439,7 @@ class RealtimeManager(
         val connection =
             peerConnection
 
+
         if (connection == null) {
 
             callback(
@@ -1218,18 +1451,22 @@ class RealtimeManager(
             return
         }
 
+
         currentSessionId =
             sessionId
+
 
         Log.d(
             TAG,
             "Publish ke Cloudflare dimulai"
         )
 
+
         Log.d(
             TAG,
             "Frame count sebelum publish: $capturedFrameCount"
         )
+
 
         createOffer { offer ->
 
@@ -1244,8 +1481,10 @@ class RealtimeManager(
                 return@createOffer
             }
 
+
             val sdp =
                 offer.description
+
 
             thread {
 
@@ -1256,31 +1495,39 @@ class RealtimeManager(
                             "$WORKER_URL/api/publish"
                         )
 
-                    val connectionHttp =
+
+                    val http =
                         url.openConnection()
                             as HttpURLConnection
 
-                    connectionHttp.requestMethod =
+
+                    http.requestMethod =
                         "POST"
 
-                    connectionHttp.setRequestProperty(
+
+                    http.setRequestProperty(
                         "Content-Type",
                         "application/json"
                     )
 
-                    connectionHttp.setRequestProperty(
+
+                    http.setRequestProperty(
                         "Accept",
                         "application/json"
                     )
 
-                    connectionHttp.connectTimeout =
+
+                    http.connectTimeout =
                         15000
 
-                    connectionHttp.readTimeout =
+
+                    http.readTimeout =
                         30000
 
-                    connectionHttp.doOutput =
+
+                    http.doOutput =
                         true
+
 
                     val body =
                         JSONObject().apply {
@@ -1311,22 +1558,27 @@ class RealtimeManager(
                             )
                         }
 
+
                     Log.d(
                         TAG,
                         "Mengirim SDP ke Worker"
                     )
+
 
                     Log.d(
                         TAG,
                         "Device ID: $deviceId"
                     )
 
+
                     Log.d(
                         TAG,
                         "Session ID: $sessionId"
                     )
 
-                    connectionHttp.outputStream.use {
+
+                    http.outputStream.use {
+
                         it.write(
                             body.toString()
                                 .toByteArray(
@@ -1335,16 +1587,17 @@ class RealtimeManager(
                         )
                     }
 
+
                     val responseCode =
-                        connectionHttp.responseCode
+                        http.responseCode
+
 
                     val responseText =
                         if (
                             responseCode in 200..299
                         ) {
 
-                            connectionHttp
-                                .inputStream
+                            http.inputStream
                                 .bufferedReader()
                                 .use {
                                     it.readText()
@@ -1352,8 +1605,7 @@ class RealtimeManager(
 
                         } else {
 
-                            connectionHttp
-                                .errorStream
+                            http.errorStream
                                 ?.bufferedReader()
                                 ?.use {
                                     it.readText()
@@ -1361,15 +1613,18 @@ class RealtimeManager(
                                 ?: "HTTP $responseCode"
                         }
 
+
                     Log.d(
                         TAG,
                         "Cloudflare response code: $responseCode"
                     )
 
+
                     Log.d(
                         TAG,
                         "Cloudflare response: $responseText"
                     )
+
 
                     if (
                         responseCode !in 200..299
@@ -1381,24 +1636,23 @@ class RealtimeManager(
                             responseText
                         )
 
-                        connectionHttp.disconnect()
+                        http.disconnect()
 
                         return@thread
                     }
+
 
                     val json =
                         JSONObject(
                             responseText
                         )
 
-                    // =================================================
-                    // WORKER RESPONSE
-                    // =================================================
 
                     val cloudflare =
                         json.optJSONObject(
                             "cloudflare"
                         )
+
 
                     if (
                         cloudflare == null
@@ -1407,18 +1661,20 @@ class RealtimeManager(
                         callback(
                             false,
                             null,
-                            "Response Worker tidak memiliki object cloudflare: $responseText"
+                            "Response Worker tidak memiliki object cloudflare"
                         )
 
-                        connectionHttp.disconnect()
+                        http.disconnect()
 
                         return@thread
                     }
+
 
                     val sessionDescription =
                         cloudflare.optJSONObject(
                             "sessionDescription"
                         )
+
 
                     if (
                         sessionDescription == null
@@ -1427,19 +1683,21 @@ class RealtimeManager(
                         callback(
                             false,
                             null,
-                            "Cloudflare tidak mengembalikan sessionDescription: $responseText"
+                            "Cloudflare tidak mengembalikan sessionDescription"
                         )
 
-                        connectionHttp.disconnect()
+                        http.disconnect()
 
                         return@thread
                     }
+
 
                     val answerSdp =
                         sessionDescription.optString(
                             "sdp",
                             ""
                         )
+
 
                     if (
                         answerSdp.isEmpty()
@@ -1448,18 +1706,20 @@ class RealtimeManager(
                         callback(
                             false,
                             null,
-                            "Cloudflare tidak mengembalikan SDP answer: $responseText"
+                            "Cloudflare tidak mengembalikan SDP answer"
                         )
 
-                        connectionHttp.disconnect()
+                        http.disconnect()
 
                         return@thread
                     }
+
 
                     Log.d(
                         TAG,
                         "SDP answer Cloudflare berhasil ditemukan"
                     )
+
 
                     val answer =
                         SessionDescription(
@@ -1467,9 +1727,6 @@ class RealtimeManager(
                             answerSdp
                         )
 
-                    // =================================================
-                    // SET REMOTE DESCRIPTION
-                    // =================================================
 
                     connection.setRemoteDescription(
                         object :
@@ -1481,11 +1738,17 @@ class RealtimeManager(
                             ) {
                             }
 
+
                             override fun onSetSuccess() {
 
                                 Log.d(
                                     TAG,
                                     "Remote SDP Cloudflare berhasil diset"
+                                )
+
+                                Log.d(
+                                    TAG,
+                                    "Frame count setelah remote SDP: $capturedFrameCount"
                                 )
 
                                 callback(
@@ -1495,13 +1758,14 @@ class RealtimeManager(
                                 )
                             }
 
+
                             override fun onCreateFailure(
                                 error: String
                             ) {
 
                                 Log.e(
                                     TAG,
-                                    "onCreateFailure: $error"
+                                    "Remote SDP create failure: $error"
                                 )
 
                                 callback(
@@ -1511,13 +1775,14 @@ class RealtimeManager(
                                 )
                             }
 
+
                             override fun onSetFailure(
                                 error: String
                             ) {
 
                                 Log.e(
                                     TAG,
-                                    "onSetFailure: $error"
+                                    "Remote SDP set failure: $error"
                                 )
 
                                 callback(
@@ -1530,7 +1795,9 @@ class RealtimeManager(
                         answer
                     )
 
-                    connectionHttp.disconnect()
+
+                    http.disconnect()
+
 
                 } catch (e: Exception) {
 
@@ -1539,6 +1806,7 @@ class RealtimeManager(
                         "Gagal publish ke Cloudflare",
                         e
                     )
+
 
                     callback(
                         false,
@@ -1551,9 +1819,10 @@ class RealtimeManager(
         }
     }
 
-    // =====================================================
+
+    // =========================================================
     // SET REMOTE ANSWER
-    // =====================================================
+    // =========================================================
 
     fun setRemoteAnswer(
         answer: SessionDescription,
@@ -1563,6 +1832,7 @@ class RealtimeManager(
 
         val connection =
             peerConnection
+
 
         if (connection == null) {
 
@@ -1574,6 +1844,7 @@ class RealtimeManager(
             return
         }
 
+
         connection.setRemoteDescription(
             object :
                 org.webrtc.SdpObserver {
@@ -1583,6 +1854,7 @@ class RealtimeManager(
                         SessionDescription
                 ) {
                 }
+
 
                 override fun onSetSuccess() {
 
@@ -1594,6 +1866,7 @@ class RealtimeManager(
                     callback?.invoke()
                 }
 
+
                 override fun onCreateFailure(
                     error: String
                 ) {
@@ -1603,6 +1876,7 @@ class RealtimeManager(
                         "Remote SDP create failure: $error"
                     )
                 }
+
 
                 override fun onSetFailure(
                     error: String
@@ -1618,9 +1892,10 @@ class RealtimeManager(
         )
     }
 
-    // =====================================================
-    // ICE
-    // =====================================================
+
+    // =========================================================
+    // ADD ICE CANDIDATE
+    // =========================================================
 
     fun addIceCandidate(
         candidate: IceCandidate
@@ -1628,6 +1903,7 @@ class RealtimeManager(
 
         val connection =
             peerConnection
+
 
         if (connection == null) {
 
@@ -1639,9 +1915,11 @@ class RealtimeManager(
             return
         }
 
+
         connection.addIceCandidate(
             candidate
         )
+
 
         Log.d(
             TAG,
@@ -1649,9 +1927,10 @@ class RealtimeManager(
         )
     }
 
-    // =====================================================
+
+    // =========================================================
     // GET VIDEO TRACK
-    // =====================================================
+    // =========================================================
 
     fun getVideoTrack():
         VideoTrack? {
@@ -1659,9 +1938,10 @@ class RealtimeManager(
         return videoTrack
     }
 
-    // =====================================================
+
+    // =========================================================
     // CAPTURE STATUS
-    // =====================================================
+    // =========================================================
 
     fun isCapturing():
         Boolean {
@@ -1669,9 +1949,10 @@ class RealtimeManager(
         return capturing
     }
 
-    // =====================================================
-    // FRAME STATUS
-    // =====================================================
+
+    // =========================================================
+    // FRAME COUNT
+    // =========================================================
 
     fun getCapturedFrameCount():
         Long {
@@ -1679,9 +1960,28 @@ class RealtimeManager(
         return capturedFrameCount
     }
 
-    // =====================================================
+
+    // =========================================================
+    // FRAME SIZE
+    // =========================================================
+
+    fun getLastFrameWidth():
+        Int {
+
+        return lastFrameWidth
+    }
+
+
+    fun getLastFrameHeight():
+        Int {
+
+        return lastFrameHeight
+    }
+
+
+    // =========================================================
     // STOP SCREEN CAPTURE
-    // =====================================================
+    // =========================================================
 
     fun stopScreenCapture() {
 
@@ -1690,10 +1990,12 @@ class RealtimeManager(
             "Menghentikan screen capture"
         )
 
+
         Log.d(
             TAG,
             "Total frame yang diterima: $capturedFrameCount"
         )
+
 
         try {
 
@@ -1708,6 +2010,7 @@ class RealtimeManager(
             )
         }
 
+
         try {
 
             screenCapturer?.dispose()
@@ -1721,38 +2024,64 @@ class RealtimeManager(
             )
         }
 
+
         screenCapturer =
             null
+
 
         try {
 
             videoTrack?.dispose()
 
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+
+            Log.e(
+                TAG,
+                "Gagal dispose VideoTrack",
+                e
+            )
         }
+
 
         videoTrack =
             null
+
 
         try {
 
             videoSource?.dispose()
 
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+
+            Log.e(
+                TAG,
+                "Gagal dispose VideoSource",
+                e
+            )
         }
+
 
         videoSource =
             null
+
 
         try {
 
             surfaceTextureHelper?.dispose()
 
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+
+            Log.e(
+                TAG,
+                "Gagal dispose SurfaceTextureHelper",
+                e
+            )
         }
+
 
         surfaceTextureHelper =
             null
+
 
         capturedFrameCount =
             0L
@@ -1760,8 +2089,15 @@ class RealtimeManager(
         firstFrameReceived =
             false
 
+        lastFrameWidth =
+            0
+
+        lastFrameHeight =
+            0
+
         capturing =
             false
+
 
         Log.d(
             TAG,
@@ -1769,9 +2105,10 @@ class RealtimeManager(
         )
     }
 
-    // =====================================================
+
+    // =========================================================
     // DISPOSE
-    // =====================================================
+    // =========================================================
 
     fun dispose() {
 
@@ -1780,33 +2117,53 @@ class RealtimeManager(
             "Dispose RealtimeManager"
         )
 
+
         stopScreenCapture()
+
 
         try {
 
             peerConnection?.close()
 
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+
+            Log.e(
+                TAG,
+                "Gagal close PeerConnection",
+                e
+            )
         }
+
 
         peerConnection =
             null
+
 
         try {
 
             peerConnectionFactory?.dispose()
 
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+
+            Log.e(
+                TAG,
+                "Gagal dispose PeerConnectionFactory",
+                e
+            )
         }
+
 
         peerConnectionFactory =
             null
 
+
         initialized =
             false
 
+
         currentSessionId =
             null
+
 
         Log.d(
             TAG,
