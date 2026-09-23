@@ -352,7 +352,7 @@ class MainActivity : Activity() {
 
                 val responseStatus =
                     response.optString(
-                        "status",
+                        "registrationStatus",
                         ""
                     )
 
