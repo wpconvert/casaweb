@@ -135,6 +135,16 @@ class RealtimeManager(
             return
         }
 
+        // =====================================================
+        // BUILD MARKER
+        // =====================================================
+        // Jika marker ini muncul di logcat, APK benar-benar
+        // memakai source RealtimeManager.kt versi terbaru.
+        Log.d(
+            TAG,
+            "BUILD MARKER: REMOTEPHONE CONTROL FIX 2026-09-24-A"
+        )
+
         Log.d(
             TAG,
             "Memulai inisialisasi WebRTC"
@@ -705,6 +715,12 @@ class RealtimeManager(
                                 newState ==
                                     PeerConnection.PeerConnectionState.CONNECTED
                             ) {
+                                // BUILD MARKER
+                                Log.d(
+                                    TAG,
+                                    "BUILD MARKER: PEER CONNECTED 2026-09-24-A"
+                                )
+
                                 Log.d(
                                     TAG,
                                     "CONTROL: PeerConnection CONNECTED -> cek setup"
@@ -1637,6 +1653,12 @@ class RealtimeManager(
         }
 
         controlSetupStarted = true
+
+        // BUILD MARKER
+        Log.d(
+            TAG,
+            "BUILD MARKER: CONTROL SETUP ENTERED 2026-09-24-A"
+        )
 
         Log.d(
             TAG,
