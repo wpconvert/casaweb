@@ -10,8 +10,8 @@ android {
         applicationId = "com.wpconvert.phoneagent"
         minSdk = 26
         targetSdk = 36
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = 100
+        versionName = "1.0.0-CONTROL-TEST"
     }
 
     buildTypes {
