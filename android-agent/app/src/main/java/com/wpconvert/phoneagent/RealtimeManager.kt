@@ -88,7 +88,14 @@ class RealtimeManager(
     private var controlChannelReady = false
 
     @Volatile
-    private var controlSetupStarted = false
+    private var controlSetupInProgress = false
+
+    @Volatile
+    private var controlSetupActive = false
+
+    private var controlSetupGeneration = 0L
+
+    private val controlSetupLock = Any()
 
     private val controlHandler =
         Handler(Looper.getMainLooper())
@@ -640,8 +647,14 @@ class RealtimeManager(
                                 dataChannel.label() ==
                                 CONTROL_CHANNEL_NAME
                             ) {
+                                val generation =
+                                    synchronized(controlSetupLock) {
+                                        controlSetupGeneration
+                                    }
+
                                 attachControlDataChannel(
-                                    dataChannel
+                                    dataChannel,
+                                    generation
                                 )
                             }
                         }
@@ -711,24 +724,41 @@ class RealtimeManager(
                                 "PeerConnection state: $newState"
                             )
 
-                            if (
-                                newState ==
-                                    PeerConnection.PeerConnectionState.CONNECTED
-                            ) {
-                                // BUILD MARKER
-                                Log.d(
-                                    TAG,
-                                    "BUILD MARKER: PEER CONNECTED 2026-09-24-A"
-                                )
+                            when (newState) {
+                                PeerConnection.PeerConnectionState.CONNECTED -> {
+                                    Log.d(
+                                        TAG,
+                                        "BUILD MARKER: PEER CONNECTED 2026-09-24-B"
+                                    )
 
-                                Log.d(
-                                    TAG,
-                                    "CONTROL: PeerConnection CONNECTED -> cek setup"
-                                )
+                                    Log.d(
+                                        TAG,
+                                        "CONTROL: PeerConnection CONNECTED -> cek setup"
+                                    )
 
-                                controlHandler.post {
-                                    requestControlSetupWhenConnected()
+                                    controlHandler.post {
+                                        requestControlSetupWhenConnected()
+                                    }
                                 }
+
+                                PeerConnection.PeerConnectionState.DISCONNECTED,
+                                PeerConnection.PeerConnectionState.FAILED,
+                                PeerConnection.PeerConnectionState.CLOSED -> {
+                                    Log.w(
+                                        TAG,
+                                        "CONTROL: PeerConnection state=$newState -> reset control state"
+                                    )
+
+                                    synchronized(controlSetupLock) {
+                                        controlSetupActive = false
+                                        controlSetupInProgress = false
+                                        controlSetupGeneration++
+                                    }
+
+                                    controlChannelReady = false
+                                }
+
+                                else -> Unit
                             }
                         }
                     }
@@ -1600,29 +1630,38 @@ class RealtimeManager(
     // CONTROL DATACHANNEL
     // =====================================================
 
-    /**
-     * Menyiapkan jalur DataChannel kontrol Android.
+    /*
+     * CONTROL ARCHITECTURE
      *
-     * Alurnya:
-     * 1. establish transport DataChannel dari Worker
-     * 2. renegotiate PeerConnection
-     * 3. minta Cloudflare membuat application channel "controls"
-     * 4. buat negotiated DataChannel dengan ID dari Cloudflare
+     * Video dan control sengaja dipisahkan.
+     *
+     * Video:
+     *   create session -> publish video -> connected
+     *
+     * Control:
+     *   1. pastikan PeerConnection CONNECTED
+     *   2. minta Cloudflare membuat transport DataChannel
+     *      "server-events"
+     *   3. terima SDP offer Cloudflare
+     *   4. set remote offer
+     *   5. create/set local answer
+     *   6. renegotiate ke Worker
+     *   7. tunggu PeerConnection CONNECTED lagi
+     *   8. minta Cloudflare allocate channel lokal "controls"
+     *   9. gunakan ID channel yang diberikan Cloudflare
+     *  10. create negotiated DataChannel "controls"
+     *
+     * Semua langkah dibuat serial. Tidak ada dua mutation
+     * Cloudflare yang dijalankan bersamaan pada session yang sama.
      */
+
     private fun requestControlSetupWhenConnected() {
 
-        if (controlSetupStarted) {
-            Log.d(
-                TAG,
-                "CONTROL: setup sudah dimulai, skip"
-            )
-            return
-        }
-
         val connection = peerConnection
+        val sessionId = currentSessionId
 
-        if (currentSessionId.isNullOrBlank()) {
-            Log.e(
+        if (sessionId.isNullOrBlank()) {
+            Log.d(
                 TAG,
                 "CONTROL: sessionId belum tersedia"
             )
@@ -1630,19 +1669,19 @@ class RealtimeManager(
         }
 
         if (connection == null) {
-            Log.e(
+            Log.d(
                 TAG,
-                "CONTROL: PeerConnection null"
+                "CONTROL: PeerConnection belum tersedia"
             )
             return
         }
 
-        val state = connection.connectionState()
-
-        if (state != PeerConnection.PeerConnectionState.CONNECTED) {
+        if (connection.connectionState() !=
+            PeerConnection.PeerConnectionState.CONNECTED
+        ) {
             Log.d(
                 TAG,
-                "CONTROL: belum CONNECTED, state=$state -> retry 500ms"
+                "CONTROL: menunggu CONNECTED, state=${connection.connectionState()}"
             )
 
             controlHandler.postDelayed(
@@ -1652,117 +1691,183 @@ class RealtimeManager(
             return
         }
 
-        controlSetupStarted = true
+        synchronized(controlSetupLock) {
 
-        // BUILD MARKER
-        Log.d(
-            TAG,
-            "BUILD MARKER: CONTROL SETUP ENTERED 2026-09-24-A"
-        )
+            if (controlChannelReady &&
+                controlDataChannel?.state() ==
+                DataChannel.State.OPEN
+            ) {
+                controlSetupActive = true
 
-        Log.d(
-            TAG,
-            "CONTROL: memulai setup karena PeerConnection sudah CONNECTED"
-        )
-
-        setupControlDataChannel { ok, error ->
-            if (ok) {
                 Log.d(
                     TAG,
-                    "CONTROL: setup berhasil"
+                    "CONTROL: channel sudah OPEN, tidak perlu setup ulang"
                 )
-            } else {
-                Log.e(
-                    TAG,
-                    "CONTROL: setup gagal: $error"
-                )
-                controlSetupStarted = false
+
+                return
             }
+
+            if (controlSetupInProgress) {
+                Log.d(
+                    TAG,
+                    "CONTROL: setup sedang berjalan, skip"
+                )
+                return
+            }
+
+            controlSetupInProgress = true
+            controlSetupActive = false
+            controlSetupGeneration++
+
+            Log.d(
+                TAG,
+                "BUILD MARKER: CONTROL SETUP ENTERED 2026-09-24-B"
+            )
+        }
+
+        val generation: Long
+
+        synchronized(controlSetupLock) {
+            generation = controlSetupGeneration
+        }
+
+        Log.d(
+            TAG,
+            "CONTROL: memulai setup generation=$generation session=$sessionId"
+        )
+
+        setupControlDataChannelInternal(
+            sessionId = sessionId,
+            generation = generation
+        )
+    }
+
+    private fun finishControlSetup(
+        generation: Long,
+        success: Boolean,
+        error: String?
+    ) {
+
+        synchronized(controlSetupLock) {
+
+            if (generation != controlSetupGeneration) {
+                Log.d(
+                    TAG,
+                    "CONTROL: hasil setup generation lama diabaikan"
+                )
+                return
+            }
+
+            controlSetupInProgress = false
+            controlSetupActive = success
+        }
+
+        if (success) {
+
+            Log.d(
+                TAG,
+                "CONTROL: setup berhasil generation=$generation"
+            )
+
+        } else {
+
+            controlChannelReady = false
+
+            Log.e(
+                TAG,
+                "CONTROL: setup gagal generation=$generation error=$error"
+            )
+
+            /*
+             * Jangan langsung melakukan mutation kedua ketika callback
+             * sebelumnya baru selesai. Beri jeda agar signaling state
+             * benar-benar stabil.
+             */
+            controlHandler.postDelayed(
+                {
+                    val connection = peerConnection
+
+                    if (
+                        currentSessionId == null ||
+                        connection == null
+                    ) {
+                        return@postDelayed
+                    }
+
+                    if (
+                        connection.connectionState() ==
+                        PeerConnection.PeerConnectionState.CONNECTED
+                    ) {
+                        requestControlSetupWhenConnected()
+                    }
+                },
+                2000L
+            )
         }
     }
 
     /**
-     * Menunggu PeerConnection kembali CONNECTED setelah transport
-     * DataChannel direnegosiasi. Cloudflare meminta application
-     * DataChannel baru dialokasikan setelah transport kedua endpoint
-     * sudah terhubung.
+     * Public compatibility wrapper.
+     *
+     * Kode lama dapat tetap memanggil setupControlDataChannel().
+     * Setup sebenarnya tetap dijalankan oleh state machine serial di atas.
      */
-    private fun waitForPeerConnectionConnected(
-        callback: () -> Unit
+    fun setupControlDataChannel(
+        callback: ((Boolean, String?) -> Unit)? = null
+    ) {
+
+        requestControlSetupWhenConnected()
+
+        controlHandler.postDelayed(
+            object : Runnable {
+                override fun run() {
+
+                    val ready =
+                        controlChannelReady &&
+                            controlDataChannel?.state() ==
+                            DataChannel.State.OPEN
+
+                    val stillWorking =
+                        synchronized(controlSetupLock) {
+                            controlSetupInProgress
+                        }
+
+                    if (ready) {
+                        callback?.invoke(
+                            true,
+                            null
+                        )
+                        return
+                    }
+
+                    if (!stillWorking) {
+                        callback?.invoke(
+                            false,
+                            "Control DataChannel belum OPEN"
+                        )
+                        return
+                    }
+
+                    controlHandler.postDelayed(
+                        this,
+                        250L
+                    )
+                }
+            },
+            250L
+        )
+    }
+
+    private fun setupControlDataChannelInternal(
+        sessionId: String,
+        generation: Long
     ) {
 
         val connection = peerConnection
 
         if (connection == null) {
-            Log.e(
-                TAG,
-                "CONTROL: tidak bisa menunggu CONNECTED, PeerConnection null"
-            )
-            return
-        }
-
-        val start = System.currentTimeMillis()
-
-        fun poll() {
-            val state = connection.connectionState()
-
-            if (state == PeerConnection.PeerConnectionState.CONNECTED) {
-                Log.d(
-                    TAG,
-                    "CONTROL: PeerConnection CONNECTED setelah renegotiate"
-                )
-                callback()
-                return
-            }
-
-            if (
-                state == PeerConnection.PeerConnectionState.FAILED ||
-                state == PeerConnection.PeerConnectionState.CLOSED
-            ) {
-                Log.e(
-                    TAG,
-                    "CONTROL: PeerConnection state=$state setelah renegotiate"
-                )
-                return
-            }
-
-            if (System.currentTimeMillis() - start >= 15000L) {
-                Log.e(
-                    TAG,
-                    "CONTROL: timeout menunggu PeerConnection CONNECTED, state=$state"
-                )
-                return
-            }
-
-            controlHandler.postDelayed(
-                { poll() },
-                250L
-            )
-        }
-
-        poll()
-    }
-
-    fun setupControlDataChannel(
-        callback: ((Boolean, String?) -> Unit)? = null
-    ) {
-
-        val sessionId =
-            currentSessionId
-
-        val connection =
-            peerConnection
-
-        if (sessionId.isNullOrBlank()) {
-            callback?.invoke(
-                false,
-                "SessionId belum tersedia"
-            )
-            return
-        }
-
-        if (connection == null) {
-            callback?.invoke(
+            finishControlSetup(
+                generation,
                 false,
                 "PeerConnection belum tersedia"
             )
@@ -1771,7 +1876,7 @@ class RealtimeManager(
 
         Log.d(
             TAG,
-            "CONTROL STEP 1: mulai datachannel-establish session=$sessionId"
+            "CONTROL STEP 1: datachannel-establish session=$sessionId"
         )
 
         postJson(
@@ -1779,36 +1884,38 @@ class RealtimeManager(
             JSONObject().apply {
                 put("sessionId", sessionId)
                 put("location", "remote")
-                put(
-                    "dataChannelName",
-                    "server-events"
-                )
+                put("dataChannelName", "server-events")
             }
         ) { ok, establishJson, error ->
 
+            if (!isCurrentControlGeneration(generation)) {
+                return@postJson
+            }
+
             if (!ok || establishJson == null) {
-                callback?.invoke(
+                finishControlSetup(
+                    generation,
                     false,
                     error ?: "DataChannel establish gagal"
                 )
                 return@postJson
             }
 
+            Log.d(
+                TAG,
+                "CONTROL STEP 1 response=$establishJson"
+            )
+
             val cloudflare =
-                establishJson.optJSONObject(
-                    "cloudflare"
-                )
+                establishJson.optJSONObject("cloudflare")
 
             val description =
-                establishJson.optJSONObject(
-                    "sessionDescription"
-                )
-                    ?: cloudflare?.optJSONObject(
-                        "sessionDescription"
-                    )
+                establishJson.optJSONObject("sessionDescription")
+                    ?: cloudflare?.optJSONObject("sessionDescription")
 
             if (description == null) {
-                callback?.invoke(
+                finishControlSetup(
+                    generation,
                     false,
                     "sessionDescription DataChannel tidak ditemukan"
                 )
@@ -1816,13 +1923,11 @@ class RealtimeManager(
             }
 
             val offerSdp =
-                description.optString(
-                    "sdp",
-                    ""
-                )
+                description.optString("sdp", "")
 
             if (offerSdp.isBlank()) {
-                callback?.invoke(
+                finishControlSetup(
+                    generation,
                     false,
                     "SDP DataChannel kosong"
                 )
@@ -1835,54 +1940,81 @@ class RealtimeManager(
                     offerSdp
                 )
 
+            Log.d(
+                TAG,
+                "CONTROL: set remote transport offer"
+            )
+
             connection.setRemoteDescription(
-                object :
-                    org.webrtc.SdpObserver {
+                object : org.webrtc.SdpObserver {
 
                     override fun onCreateSuccess(
-                        description:
-                            SessionDescription
+                        description: SessionDescription
                     ) {
                     }
 
                     override fun onSetSuccess() {
 
+                        if (!isCurrentControlGeneration(generation)) {
+                            return
+                        }
+
+                        Log.d(
+                            TAG,
+                            "CONTROL: remote transport offer berhasil diset"
+                        )
+
                         connection.createAnswer(
-                            object :
-                                org.webrtc.SdpObserver {
+                            object : org.webrtc.SdpObserver {
 
                                 override fun onCreateSuccess(
-                                    answer:
-                                        SessionDescription
+                                    answer: SessionDescription
                                 ) {
 
                                     connection.setLocalDescription(
-                                        object :
-                                            org.webrtc.SdpObserver {
+                                        object : org.webrtc.SdpObserver {
 
                                             override fun onCreateSuccess(
-                                                description:
-                                                    SessionDescription
+                                                description: SessionDescription
                                             ) {
                                             }
 
                                             override fun onSetSuccess() {
 
+                                                if (!isCurrentControlGeneration(
+                                                        generation
+                                                    )
+                                                ) {
+                                                    return
+                                                }
+
                                                 waitForIceGathering {
 
+                                                    if (!isCurrentControlGeneration(
+                                                            generation
+                                                        )
+                                                    ) {
+                                                        return@waitForIceGathering
+                                                    }
+
                                                     val localSdp =
-                                                        connection
-                                                            .localDescription
+                                                        connection.localDescription
                                                             ?.description
                                                             ?: ""
 
                                                     if (localSdp.isBlank()) {
-                                                        callback?.invoke(
+                                                        finishControlSetup(
+                                                            generation,
                                                             false,
                                                             "Local SDP DataChannel kosong"
                                                         )
                                                         return@waitForIceGathering
                                                     }
+
+                                                    Log.d(
+                                                        TAG,
+                                                        "CONTROL: mengirim renegotiate SDP"
+                                                    )
 
                                                     putJson(
                                                         "/api/renegotiate",
@@ -1898,8 +2030,16 @@ class RealtimeManager(
                                                         }
                                                     ) { renegotiateOk, _, renegotiateError ->
 
+                                                        if (!isCurrentControlGeneration(
+                                                                generation
+                                                            )
+                                                        ) {
+                                                            return@putJson
+                                                        }
+
                                                         if (!renegotiateOk) {
-                                                            callback?.invoke(
+                                                            finishControlSetup(
+                                                                generation,
                                                                 false,
                                                                 renegotiateError
                                                                     ?: "Renegotiate DataChannel gagal"
@@ -1909,18 +2049,33 @@ class RealtimeManager(
 
                                                         Log.d(
                                                             TAG,
-                                                            "CONTROL STEP 2: renegotiate berhasil, menunggu CONNECTED sebelum publish controls"
+                                                            "CONTROL STEP 2: renegotiate berhasil"
                                                         )
 
-                                                        waitForPeerConnectionConnected {
+                                                        /*
+                                                         * Jangan allocate controls
+                                                         * sebelum transport benar-benar
+                                                         * CONNECTED.
+                                                         */
+                                                        waitForPeerConnectionConnected(
+                                                            generation
+                                                        ) {
+
+                                                            if (!isCurrentControlGeneration(
+                                                                    generation
+                                                                )
+                                                            ) {
+                                                                return@waitForPeerConnectionConnected
+                                                            }
+
                                                             Log.d(
                                                                 TAG,
-                                                                "CONTROL STEP 3: transport CONNECTED, publish controls"
+                                                                "CONTROL STEP 3: transport CONNECTED -> publish controls"
                                                             )
 
                                                             createPublisherControlChannel(
                                                                 sessionId,
-                                                                callback
+                                                                generation
                                                             )
                                                         }
                                                     }
@@ -1930,18 +2085,20 @@ class RealtimeManager(
                                             override fun onCreateFailure(
                                                 error: String
                                             ) {
-                                                callback?.invoke(
+                                                finishControlSetup(
+                                                    generation,
                                                     false,
-                                                    error
+                                                    "Local SDP create failure: $error"
                                                 )
                                             }
 
                                             override fun onSetFailure(
                                                 error: String
                                             ) {
-                                                callback?.invoke(
+                                                finishControlSetup(
+                                                    generation,
                                                     false,
-                                                    error
+                                                    "Local SDP set failure: $error"
                                                 )
                                             }
                                         },
@@ -1955,15 +2112,21 @@ class RealtimeManager(
                                 override fun onCreateFailure(
                                     error: String
                                 ) {
-                                    callback?.invoke(
+                                    finishControlSetup(
+                                        generation,
                                         false,
-                                        error
+                                        "Answer create failure: $error"
                                     )
                                 }
 
                                 override fun onSetFailure(
                                     error: String
                                 ) {
+                                    finishControlSetup(
+                                        generation,
+                                        false,
+                                        "Answer set failure: $error"
+                                    )
                                 }
                             },
                             MediaConstraints()
@@ -1973,18 +2136,20 @@ class RealtimeManager(
                     override fun onCreateFailure(
                         error: String
                     ) {
-                        callback?.invoke(
+                        finishControlSetup(
+                            generation,
                             false,
-                            error
+                            "Remote offer create failure: $error"
                         )
                     }
 
                     override fun onSetFailure(
                         error: String
                     ) {
-                        callback?.invoke(
+                        finishControlSetup(
+                            generation,
                             false,
-                            error
+                            "Remote offer set failure: $error"
                         )
                     }
                 },
@@ -1993,15 +2158,97 @@ class RealtimeManager(
         }
     }
 
+    private fun waitForPeerConnectionConnected(
+        generation: Long,
+        callback: () -> Unit
+    ) {
+
+        val connection = peerConnection
+
+        if (connection == null) {
+            finishControlSetup(
+                generation,
+                false,
+                "PeerConnection null saat menunggu CONNECTED"
+            )
+            return
+        }
+
+        val start = System.currentTimeMillis()
+
+        fun poll() {
+
+            if (!isCurrentControlGeneration(generation)) {
+                return
+            }
+
+            val state =
+                connection.connectionState()
+
+            if (
+                state ==
+                PeerConnection.PeerConnectionState.CONNECTED
+            ) {
+                Log.d(
+                    TAG,
+                    "CONTROL: PeerConnection CONNECTED setelah renegotiate"
+                )
+
+                callback()
+                return
+            }
+
+            if (
+                state ==
+                PeerConnection.PeerConnectionState.FAILED ||
+                state ==
+                PeerConnection.PeerConnectionState.CLOSED
+            ) {
+                finishControlSetup(
+                    generation,
+                    false,
+                    "PeerConnection state=$state setelah renegotiate"
+                )
+                return
+            }
+
+            if (
+                System.currentTimeMillis() - start >=
+                20000L
+            ) {
+                finishControlSetup(
+                    generation,
+                    false,
+                    "Timeout menunggu PeerConnection CONNECTED, state=$state"
+                )
+                return
+            }
+
+            controlHandler.postDelayed(
+                { poll() },
+                250L
+            )
+        }
+
+        poll()
+    }
+
     private fun createPublisherControlChannel(
         sessionId: String,
-        callback: ((Boolean, String?) -> Unit)?
+        generation: Long
     ) {
+
+        if (!isCurrentControlGeneration(generation)) {
+            return
+        }
 
         postJson(
             "/api/datachannel-publish",
             JSONObject().apply {
-                put("sessionId", sessionId)
+                put(
+                    "sessionId",
+                    sessionId
+                )
                 put(
                     "dataChannelName",
                     CONTROL_CHANNEL_NAME
@@ -2013,31 +2260,47 @@ class RealtimeManager(
             }
         ) { ok, json, error ->
 
-            Log.d(
-                TAG,
-                "CONTROL STEP 4: datachannel-publish response ok=$ok json=$json error=$error"
-            )
-
-            if (!ok || json == null) {
-                callback?.invoke(
-                    false,
-                    error ?: "DataChannel publish gagal"
-                )
+            if (!isCurrentControlGeneration(generation)) {
                 return@postJson
             }
 
-            val channels =
-                json.optJSONArray(
-                    "dataChannels"
+            Log.d(
+                TAG,
+                "CONTROL STEP 4: datachannel-publish ok=$ok json=$json error=$error"
+            )
+
+            if (!ok || json == null) {
+
+                finishControlSetup(
+                    generation,
+                    false,
+                    error ?: "DataChannel publish gagal"
                 )
+
+                return@postJson
+            }
+
+            /*
+             * Worker saat ini biasanya meneruskan response Cloudflare
+             * langsung. Tetap dukung response yang dibungkus object
+             * "cloudflare" supaya perubahan kecil pada Worker tidak
+             * mematikan control.
+             */
+            val cloudflare =
+                json.optJSONObject("cloudflare")
+
+            val channels =
+                json.optJSONArray("dataChannels")
+                    ?: cloudflare?.optJSONArray("dataChannels")
 
             if (
                 channels == null ||
                 channels.length() == 0
             ) {
-                callback?.invoke(
+                finishControlSetup(
+                    generation,
                     false,
-                    "Cloudflare tidak mengembalikan dataChannels"
+                    "Cloudflare tidak mengembalikan dataChannels: $json"
                 )
                 return@postJson
             }
@@ -2045,51 +2308,81 @@ class RealtimeManager(
             val channelObject =
                 channels.optJSONObject(0)
 
-            val channelId =
-                channelObject?.optInt(
-                    "id",
-                    -1
-                ) ?: -1
-
-            Log.d(
-                TAG,
-                "CONTROL STEP 5: Cloudflare channelId=$channelId"
-            )
-
-            if (channelId < 0) {
-                callback?.invoke(
+            if (channelObject == null) {
+                finishControlSetup(
+                    generation,
                     false,
-                    "ID DataChannel controls tidak ditemukan"
+                    "Object DataChannel controls kosong"
                 )
                 return@postJson
             }
 
+            val channelId =
+                channelObject.optInt(
+                    "id",
+                    -1
+                )
+
+            Log.d(
+                TAG,
+                "CONTROL STEP 5: Cloudflare controls channelId=$channelId object=$channelObject"
+            )
+
+            if (channelId < 0) {
+                finishControlSetup(
+                    generation,
+                    false,
+                    "ID DataChannel controls tidak ditemukan: $channelObject"
+                )
+                return@postJson
+            }
+
+            /*
+             * Penting:
+             * Tidak melakukan renegotiation SDP lagi di sini.
+             * Channel application ini adalah negotiated channel
+             * menggunakan ID yang sudah dialokasikan Cloudflare.
+             */
             createNegotiatedControlChannel(
-                channelId,
-                callback
+                channelId = channelId,
+                generation = generation
             )
         }
     }
 
     private fun createNegotiatedControlChannel(
         channelId: Int,
-        callback: ((Boolean, String?) -> Unit)?
+        generation: Long
     ) {
 
-        val connection =
-            peerConnection
+        val connection = peerConnection
 
         if (connection == null) {
-            callback?.invoke(
+            finishControlSetup(
+                generation,
                 false,
                 "PeerConnection belum tersedia"
             )
             return
         }
 
+        if (!isCurrentControlGeneration(generation)) {
+            return
+        }
+
         try {
 
-            controlDataChannel?.dispose()
+            controlDataChannel?.let {
+                try {
+                    it.unregisterObserver()
+                } catch (_: Exception) {
+                }
+
+                try {
+                    it.dispose()
+                } catch (_: Exception) {
+                }
+            }
 
             controlDataChannel = null
             controlChannelReady = false
@@ -2109,7 +2402,8 @@ class RealtimeManager(
                 )
 
             if (channel == null) {
-                callback?.invoke(
+                finishControlSetup(
+                    generation,
                     false,
                     "createDataChannel() mengembalikan null"
                 )
@@ -2117,17 +2411,23 @@ class RealtimeManager(
             }
 
             attachControlDataChannel(
-                channel
+                channel,
+                generation
             )
 
             Log.d(
                 TAG,
-                "CONTROL STEP 6: DataChannel controls dibuat id=$channelId state=${channel.state()}"
+                "CONTROL STEP 6: controls dibuat id=$channelId state=${channel.state()}"
             )
 
-            callback?.invoke(
-                true,
-                null
+            /*
+             * createDataChannel() dapat mengembalikan CONNECTING.
+             * Tunggu sampai OPEN sebelum menganggap control benar-benar
+             * aktif.
+             */
+            waitForControlChannelOpen(
+                channel,
+                generation
             )
 
         } catch (e: Exception) {
@@ -2138,15 +2438,93 @@ class RealtimeManager(
                 e
             )
 
-            callback?.invoke(
+            finishControlSetup(
+                generation,
                 false,
                 e.message ?: "Unknown error"
             )
         }
     }
 
+    private fun waitForControlChannelOpen(
+        channel: DataChannel,
+        generation: Long
+    ) {
+
+        val start = System.currentTimeMillis()
+
+        fun poll() {
+
+            if (!isCurrentControlGeneration(generation)) {
+                return
+            }
+
+            if (
+                channel.state() ==
+                DataChannel.State.OPEN
+            ) {
+                controlChannelReady = true
+                controlSetupActive = true
+
+                finishControlSetup(
+                    generation,
+                    true,
+                    null
+                )
+
+                Log.d(
+                    TAG,
+                    "BUILD MARKER: CONTROL CHANNEL OPEN 2026-09-24-B id=${channel.id()}"
+                )
+
+                return
+            }
+
+            if (
+                channel.state() ==
+                DataChannel.State.CLOSED
+            ) {
+                finishControlSetup(
+                    generation,
+                    false,
+                    "Control DataChannel CLOSED sebelum OPEN"
+                )
+                return
+            }
+
+            if (
+                System.currentTimeMillis() - start >=
+                15000L
+            ) {
+                finishControlSetup(
+                    generation,
+                    false,
+                    "Timeout menunggu control DataChannel OPEN, state=${channel.state()}"
+                )
+                return
+            }
+
+            controlHandler.postDelayed(
+                { poll() },
+                250L
+            )
+        }
+
+        poll()
+    }
+
+    private fun isCurrentControlGeneration(
+        generation: Long
+    ): Boolean {
+
+        synchronized(controlSetupLock) {
+            return generation == controlSetupGeneration
+        }
+    }
+
     private fun attachControlDataChannel(
-        channel: DataChannel
+        channel: DataChannel,
+        generation: Long
     ) {
 
         controlDataChannel =
@@ -2176,8 +2554,57 @@ class RealtimeManager(
 
                     Log.d(
                         TAG,
-                        "Control DataChannel state=$state id=${channel.id()}"
+                        "CONTROL DataChannel state=$state id=${channel.id()}"
                     )
+
+                    if (
+                        state ==
+                        DataChannel.State.OPEN
+                    ) {
+                        synchronized(controlSetupLock) {
+                            if (
+                                generation ==
+                                controlSetupGeneration
+                            ) {
+                                controlSetupActive = true
+                            }
+                        }
+
+                        return
+                    }
+
+                    if (
+                        state ==
+                        DataChannel.State.CLOSED ||
+                        state ==
+                        DataChannel.State.CLOSING
+                    ) {
+
+                        synchronized(controlSetupLock) {
+
+                            if (
+                                generation ==
+                                controlSetupGeneration
+                            ) {
+                                controlChannelReady = false
+                                controlSetupActive = false
+                                controlSetupInProgress = false
+                                controlSetupGeneration++
+                            }
+                        }
+
+                        /*
+                         * Tunggu sebentar sebelum membuat channel baru.
+                         * Ini mencegah mutation bertubi-tubi ketika transport
+                         * sedang berubah.
+                         */
+                        controlHandler.postDelayed(
+                            {
+                                requestControlSetupWhenConnected()
+                            },
+                            2000L
+                        )
+                    }
                 }
 
                 override fun onMessage(
@@ -2912,6 +3339,17 @@ class RealtimeManager(
             null
         )
 
+        synchronized(controlSetupLock) {
+            controlSetupGeneration++
+            controlSetupInProgress = false
+            controlSetupActive = false
+        }
+
+        try {
+            controlDataChannel?.unregisterObserver()
+        } catch (_: Exception) {
+        }
+
         try {
             controlDataChannel?.dispose()
         } catch (_: Exception) {
@@ -2922,8 +3360,6 @@ class RealtimeManager(
         controlChannelId =
             null
         controlChannelReady =
-            false
-        controlSetupStarted =
             false
 
         currentSessionId =
