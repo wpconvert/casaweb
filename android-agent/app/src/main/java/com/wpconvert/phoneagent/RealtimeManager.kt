@@ -303,13 +303,73 @@ class RealtimeManager(
             }
 
             // =================================================
+            // CAPTURE OBSERVER
+            // =================================================
+            // Keep the original WebRTC observer, but also log every
+            // incoming frame so we can verify that MediaProjection
+            // is continuously producing frames.
+
+            val frameObserver =
+                object : org.webrtc.CapturerObserver {
+
+                    private var frameCount = 0L
+
+                    override fun onCapturerStarted(
+                        success: Boolean
+                    ) {
+                        Log.d(
+                            TAG,
+                            "Capturer started: $success"
+                        )
+
+                        source.capturerObserver
+                            .onCapturerStarted(success)
+                    }
+
+                    override fun onCapturerStopped() {
+                        Log.d(
+                            TAG,
+                            "Capturer stopped"
+                        )
+
+                        source.capturerObserver
+                            .onCapturerStopped()
+                    }
+
+                    override fun onFrameCaptured(
+                        frame: org.webrtc.VideoFrame
+                    ) {
+                        frameCount++
+
+                        if (frameCount == 1L || frameCount % 30L == 0L) {
+                            Log.d(
+                                TAG,
+                                "CAPTURE FRAME #$frameCount ${frame.buffer.width}x${frame.buffer.height} rotation=${frame.rotation}"
+                            )
+                        }
+
+                        // Forward EVERY frame to VideoSource.
+                        source.capturerObserver
+                            .onFrameCaptured(frame)
+                    }
+                }
+
+            // =================================================
             // INITIALIZE CAPTURER
             // =================================================
 
             capturer.initialize(
                 helper,
                 context.applicationContext,
-                source.capturerObserver
+                frameObserver
+            )
+
+            // Explicitly request the same output format that the
+            // Cloudflare publisher uses.
+            source.adaptOutputFormat(
+                720,
+                1600,
+                30
             )
 
             // =================================================
