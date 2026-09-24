@@ -17,6 +17,8 @@ import org.webrtc.SurfaceTextureHelper
 import org.webrtc.VideoSource
 import org.webrtc.VideoTrack
 import org.webrtc.DataChannel
+import org.webrtc.RTCStats
+import org.webrtc.RTCStatsReport
 import java.net.HttpURLConnection
 import java.net.URL
 import kotlin.concurrent.thread
@@ -87,6 +89,32 @@ class RealtimeManager(
 
     private val controlHandler =
         Handler(Looper.getMainLooper())
+
+    // =====================================================
+    // OUTBOUND RTP DIAGNOSTICS
+    // =====================================================
+
+    private var outboundStatsLogging =
+        false
+
+    private val outboundStatsHandler =
+        Handler(Looper.getMainLooper())
+
+    private val outboundStatsRunnable =
+        object : Runnable {
+
+            override fun run() {
+
+                logOutboundRtpStats()
+
+                if (outboundStatsLogging) {
+                    outboundStatsHandler.postDelayed(
+                        this,
+                        3000L
+                    )
+                }
+            }
+        }
 
     // =====================================================
     // INITIALIZE WEBRTC
@@ -1461,6 +1489,8 @@ class RealtimeManager(
                                     "Remote SDP Cloudflare berhasil diset"
                                 )
 
+                                startOutboundRtpStatsLogging()
+
                                 callback(
                                     true,
                                     answer,
@@ -2333,6 +2363,127 @@ class RealtimeManager(
         controlChannelId
 
     // =====================================================
+    // OUTBOUND RTP DIAGNOSTICS
+    // =====================================================
+
+    private fun startOutboundRtpStatsLogging() {
+
+        if (outboundStatsLogging) {
+            return
+        }
+
+        outboundStatsLogging = true
+
+        outboundStatsHandler.removeCallbacks(
+            outboundStatsRunnable
+        )
+
+        Log.d(
+            TAG,
+            "Memulai diagnostik outbound RTP"
+        )
+
+        outboundStatsHandler.post(
+            outboundStatsRunnable
+        )
+    }
+
+    private fun stopOutboundRtpStatsLogging() {
+
+        outboundStatsLogging = false
+
+        outboundStatsHandler.removeCallbacks(
+            outboundStatsRunnable
+        )
+    }
+
+    private fun logOutboundRtpStats() {
+
+        val connection =
+            peerConnection
+
+        if (connection == null) {
+            Log.d(
+                TAG,
+                "RTP STATS: PeerConnection=null"
+            )
+            return
+        }
+
+        try {
+
+            connection.getStats(
+                object :
+                    org.webrtc.RTCStatsCollectorCallback {
+
+                    override fun onStatsDelivered(
+                        report: RTCStatsReport
+                    ) {
+
+                        var foundOutboundVideo = false
+
+                        for (
+                            stats: RTCStats
+                            in report.statsMap.values
+                        ) {
+
+                            if (
+                                stats.type != "outbound-rtp"
+                            ) {
+                                continue
+                            }
+
+                            val members =
+                                stats.members
+
+                            val kind =
+                                members["kind"]?.toString()
+                                    ?: members["mediaType"]?.toString()
+                                    ?: ""
+
+                            if (
+                                kind.isNotEmpty() &&
+                                kind != "video"
+                            ) {
+                                continue
+                            }
+
+                            foundOutboundVideo = true
+
+                            Log.d(
+                                TAG,
+                                "RTP OUT video: " +
+                                    "packetsSent=${members["packetsSent"]} " +
+                                    "bytesSent=${members["bytesSent"]} " +
+                                    "framesEncoded=${members["framesEncoded"]} " +
+                                    "framesSent=${members["framesSent"]} " +
+                                    "keyFramesEncoded=${members["keyFramesEncoded"]} " +
+                                    "nackCount=${members["nackCount"]} " +
+                                    "pliCount=${members["pliCount"]}"
+                            )
+                        }
+
+                        if (!foundOutboundVideo) {
+                            Log.d(
+                                TAG,
+                                "RTP OUT video: outbound-rtp video BELUM TERLIHAT"
+                            )
+                        }
+                    }
+                }
+            )
+
+        } catch (e: Exception) {
+
+            Log.e(
+                TAG,
+                "Gagal membaca RTP outbound stats",
+                e
+            )
+        }
+    }
+
+    // =====================================================
     // SET REMOTE ANSWER
     // =====================================================
 
@@ -2456,6 +2607,8 @@ class RealtimeManager(
 
     fun stopScreenCapture() {
 
+        stopOutboundRtpStatsLogging()
+
         Log.d(
             TAG,
             "Menghentikan screen capture"
@@ -2534,6 +2687,8 @@ class RealtimeManager(
     // =====================================================
 
     fun dispose() {
+
+        stopOutboundRtpStatsLogging()
 
         Log.d(
             TAG,
