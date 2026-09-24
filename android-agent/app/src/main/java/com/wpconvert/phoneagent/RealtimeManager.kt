@@ -87,6 +87,9 @@ class RealtimeManager(
     @Volatile
     private var controlChannelReady = false
 
+    @Volatile
+    private var controlSetupStarted = false
+
     private val controlHandler =
         Handler(Looper.getMainLooper())
 
@@ -697,6 +700,20 @@ class RealtimeManager(
                                 TAG,
                                 "PeerConnection state: $newState"
                             )
+
+                            if (
+                                newState ==
+                                    PeerConnection.PeerConnectionState.CONNECTED
+                            ) {
+                                Log.d(
+                                    TAG,
+                                    "CONTROL: PeerConnection CONNECTED -> cek setup"
+                                )
+
+                                controlHandler.post {
+                                    requestControlSetupWhenConnected()
+                                }
+                            }
                         }
                     }
                 )
@@ -1497,18 +1514,13 @@ class RealtimeManager(
                                     null
                                 )
 
-                                setupControlDataChannel { ok, error ->
-                                    if (ok) {
-                                        Log.d(
-                                            TAG,
-                                            "Control DataChannel siap"
-                                        )
-                                    } else {
-                                        Log.e(
-                                            TAG,
-                                            "Control DataChannel gagal: $error"
-                                        )
-                                    }
+                                Log.d(
+                                    TAG,
+                                    "CONTROL: video publish selesai -> menunggu PeerConnection CONNECTED"
+                                )
+
+                                controlHandler.post {
+                                    requestControlSetupWhenConnected()
                                 }
                             }
 
@@ -1581,6 +1593,134 @@ class RealtimeManager(
      * 3. minta Cloudflare membuat application channel "controls"
      * 4. buat negotiated DataChannel dengan ID dari Cloudflare
      */
+    private fun requestControlSetupWhenConnected() {
+
+        if (controlSetupStarted) {
+            Log.d(
+                TAG,
+                "CONTROL: setup sudah dimulai, skip"
+            )
+            return
+        }
+
+        val connection = peerConnection
+
+        if (currentSessionId.isNullOrBlank()) {
+            Log.e(
+                TAG,
+                "CONTROL: sessionId belum tersedia"
+            )
+            return
+        }
+
+        if (connection == null) {
+            Log.e(
+                TAG,
+                "CONTROL: PeerConnection null"
+            )
+            return
+        }
+
+        val state = connection.connectionState()
+
+        if (state != PeerConnection.PeerConnectionState.CONNECTED) {
+            Log.d(
+                TAG,
+                "CONTROL: belum CONNECTED, state=$state -> retry 500ms"
+            )
+
+            controlHandler.postDelayed(
+                { requestControlSetupWhenConnected() },
+                500L
+            )
+            return
+        }
+
+        controlSetupStarted = true
+
+        Log.d(
+            TAG,
+            "CONTROL: memulai setup karena PeerConnection sudah CONNECTED"
+        )
+
+        setupControlDataChannel { ok, error ->
+            if (ok) {
+                Log.d(
+                    TAG,
+                    "CONTROL: setup berhasil"
+                )
+            } else {
+                Log.e(
+                    TAG,
+                    "CONTROL: setup gagal: $error"
+                )
+                controlSetupStarted = false
+            }
+        }
+    }
+
+    /**
+     * Menunggu PeerConnection kembali CONNECTED setelah transport
+     * DataChannel direnegosiasi. Cloudflare meminta application
+     * DataChannel baru dialokasikan setelah transport kedua endpoint
+     * sudah terhubung.
+     */
+    private fun waitForPeerConnectionConnected(
+        callback: () -> Unit
+    ) {
+
+        val connection = peerConnection
+
+        if (connection == null) {
+            Log.e(
+                TAG,
+                "CONTROL: tidak bisa menunggu CONNECTED, PeerConnection null"
+            )
+            return
+        }
+
+        val start = System.currentTimeMillis()
+
+        fun poll() {
+            val state = connection.connectionState()
+
+            if (state == PeerConnection.PeerConnectionState.CONNECTED) {
+                Log.d(
+                    TAG,
+                    "CONTROL: PeerConnection CONNECTED setelah renegotiate"
+                )
+                callback()
+                return
+            }
+
+            if (
+                state == PeerConnection.PeerConnectionState.FAILED ||
+                state == PeerConnection.PeerConnectionState.CLOSED
+            ) {
+                Log.e(
+                    TAG,
+                    "CONTROL: PeerConnection state=$state setelah renegotiate"
+                )
+                return
+            }
+
+            if (System.currentTimeMillis() - start >= 15000L) {
+                Log.e(
+                    TAG,
+                    "CONTROL: timeout menunggu PeerConnection CONNECTED, state=$state"
+                )
+                return
+            }
+
+            controlHandler.postDelayed(
+                { poll() },
+                250L
+            )
+        }
+
+        poll()
+    }
+
     fun setupControlDataChannel(
         callback: ((Boolean, String?) -> Unit)? = null
     ) {
@@ -1609,7 +1749,7 @@ class RealtimeManager(
 
         Log.d(
             TAG,
-            "Menyiapkan Control DataChannel..."
+            "CONTROL STEP 1: mulai datachannel-establish session=$sessionId"
         )
 
         postJson(
@@ -1745,10 +1885,22 @@ class RealtimeManager(
                                                             return@putJson
                                                         }
 
-                                                        createPublisherControlChannel(
-                                                            sessionId,
-                                                            callback
+                                                        Log.d(
+                                                            TAG,
+                                                            "CONTROL STEP 2: renegotiate berhasil, menunggu CONNECTED sebelum publish controls"
                                                         )
+
+                                                        waitForPeerConnectionConnected {
+                                                            Log.d(
+                                                                TAG,
+                                                                "CONTROL STEP 3: transport CONNECTED, publish controls"
+                                                            )
+
+                                                            createPublisherControlChannel(
+                                                                sessionId,
+                                                                callback
+                                                            )
+                                                        }
                                                     }
                                                 }
                                             }
@@ -1832,8 +1984,17 @@ class RealtimeManager(
                     "dataChannelName",
                     CONTROL_CHANNEL_NAME
                 )
+                put(
+                    "ordered",
+                    true
+                )
             }
         ) { ok, json, error ->
+
+            Log.d(
+                TAG,
+                "CONTROL STEP 4: datachannel-publish response ok=$ok json=$json error=$error"
+            )
 
             if (!ok || json == null) {
                 callback?.invoke(
@@ -1867,6 +2028,11 @@ class RealtimeManager(
                     "id",
                     -1
                 ) ?: -1
+
+            Log.d(
+                TAG,
+                "CONTROL STEP 5: Cloudflare channelId=$channelId"
+            )
 
             if (channelId < 0) {
                 callback?.invoke(
@@ -1934,7 +2100,7 @@ class RealtimeManager(
 
             Log.d(
                 TAG,
-                "Control DataChannel dibuat id=$channelId state=${channel.state()}"
+                "CONTROL STEP 6: DataChannel controls dibuat id=$channelId state=${channel.state()}"
             )
 
             callback?.invoke(
@@ -2734,6 +2900,8 @@ class RealtimeManager(
         controlChannelId =
             null
         controlChannelReady =
+            false
+        controlSetupStarted =
             false
 
         currentSessionId =
