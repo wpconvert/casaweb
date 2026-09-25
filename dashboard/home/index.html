@@ -297,6 +297,22 @@ tr:last-child td{border-bottom:0}
 </style>
 </head>
 <body>
+    
+<script>
+(function () {
+    const LOGIN_URL =
+        "https://wpconvert.github.io/casaweb/dashboard/login/index.html";
+
+    const SESSION_KEY =
+        "remotephone_logged_in";
+
+    if (
+        localStorage.getItem(SESSION_KEY) !== "true"
+    ) {
+        window.location.replace(LOGIN_URL);
+    }
+})();
+</script>
 <div class="app">
 
 <aside class="sidebar">
