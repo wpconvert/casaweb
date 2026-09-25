@@ -477,6 +477,9 @@ let viewerSessionId = null;
 let viewerControlChannel = null;
 let viewerControlReady = false;
 let viewerPublisherSessionId = null;
+let viewerAutoReconnectEnabled = false;
+let viewerReconnectTimer = null;
+let viewerReconnectInProgress = false;
 
 const STORAGE = {
     categories: "rp_categories_v3",
@@ -2557,7 +2560,10 @@ async function waitForPeerConnection(
 
 async function startViewerStream(deviceId) {
 
-    stopViewerStream();
+    viewerAutoReconnectEnabled = true;
+    stopViewerStream({ keepAutoReconnect: true });
+
+    viewerAutoReconnectEnabled = true;
 
     const video =
         document.getElementById(
@@ -2816,15 +2822,17 @@ async function startViewerStream(deviceId) {
                         "block";
 
                     message.textContent =
-                        "Koneksi live screen terputus.";
+                        "Koneksi live screen terputus. Menghubungkan ulang...";
 
                     if (viewerStatus) {
 
                         viewerStatus.innerHTML = `
                             <span class="dot"></span>
-                            WebRTC Disconnected
+                            Reconnecting
                         `;
                     }
+
+                    scheduleViewerReconnect(deviceId);
                 }
             };
 
@@ -3373,6 +3381,50 @@ async function startViewerStream(deviceId) {
 
 
 // =====================================================
+// VIEWER AUTO RECONNECT
+// =====================================================
+
+function scheduleViewerReconnect(deviceId) {
+    if (!viewerAutoReconnectEnabled || !deviceId) return;
+    if (viewerReconnectInProgress) return;
+
+    if (viewerReconnectTimer) {
+        clearTimeout(viewerReconnectTimer);
+        viewerReconnectTimer = null;
+    }
+
+    viewerReconnectTimer = setTimeout(async () => {
+        viewerReconnectTimer = null;
+
+        if (!viewerAutoReconnectEnabled || viewerReconnectInProgress) return;
+
+        viewerReconnectInProgress = true;
+
+        const status = document.getElementById("viewerStatus");
+        const message = document.getElementById("viewerMessage");
+
+        if (status) {
+            status.innerHTML = '<span class="dot"></span>Reconnecting';
+        }
+        if (message) {
+            message.style.display = "block";
+            message.textContent = "Menghubungkan ulang ke live screen...";
+        }
+
+        try {
+            // startViewerStream() fetches /stream again, so after Android
+            // publisher reconnects it picks up the NEW Cloudflare session.
+            await startViewerStream(deviceId);
+        } catch (error) {
+            console.error("[Viewer] auto reconnect gagal:", error);
+        } finally {
+            viewerReconnectInProgress = false;
+        }
+    }, 1500);
+}
+
+
+// =====================================================
 // CONTROL DATACHANNEL
 // =====================================================
 
@@ -3513,11 +3565,13 @@ async function setupViewerControlChannel(deviceId) {
     viewerControlChannel = channel;
 
     channel.onopen = () => {
-        viewerControlReady = true;
+        // Browser-side OPEN only proves that the local WebRTC channel is open.
+        // Android must send control_ready before commands are enabled.
+        viewerControlReady = false;
         if (status) {
-            status.innerHTML = '<span class="dot online"></span>Control Connected';
+            status.innerHTML = '<span class="dot online"></span>Control Handshaking';
         }
-        console.log("[Viewer] Control DataChannel OPEN", channelId);
+        console.log("[Viewer] Control DataChannel OPEN, waiting for Android handshake", channelId);
     };
 
     channel.onclose = () => {
@@ -3526,6 +3580,7 @@ async function setupViewerControlChannel(deviceId) {
             status.innerHTML = '<span class="dot"></span>Control Disconnected';
         }
         console.warn("[Viewer] Control DataChannel CLOSED");
+        scheduleViewerReconnect(deviceId);
     };
 
     channel.onerror = event => {
@@ -3538,19 +3593,39 @@ async function setupViewerControlChannel(deviceId) {
 
     channel.onmessage = event => {
         console.log("[Viewer] Control message:", event.data);
+
+        try {
+            const message =
+                typeof event.data === "string"
+                    ? JSON.parse(event.data)
+                    : event.data;
+
+            if (message?.type === "control_ready") {
+                viewerControlReady = true;
+
+                if (status) {
+                    status.innerHTML = '<span class="dot online"></span>Control Ready';
+                }
+
+                console.log(
+                    "[Viewer] Android CONTROL READY handshake diterima"
+                );
+            }
+        } catch (error) {
+            console.warn("[Viewer] Control message bukan JSON:", error);
+        }
     };
 
     if (channel.readyState === "open") {
-        viewerControlReady = true;
         if (status) {
-            status.innerHTML = '<span class="dot online"></span>Control Connected';
+            status.innerHTML = '<span class="dot online"></span>Control Handshaking';
         }
     }
 }
 
 function sendViewerCommand(type) {
-    if (!viewerControlChannel || viewerControlChannel.readyState !== "open") {
-        showToast("Control belum terhubung ke APK.");
+    if (!viewerControlChannel || viewerControlChannel.readyState !== "open" || !viewerControlReady) {
+        showToast("Control belum siap di APK.");
         return;
     }
 
@@ -3680,8 +3755,8 @@ function getViewerAndroidPoint(event, video) {
 }
 
 function sendViewerInput(payload) {
-    if (!viewerControlChannel || viewerControlChannel.readyState !== "open") {
-        showToast("Control belum terhubung ke APK.");
+    if (!viewerControlChannel || viewerControlChannel.readyState !== "open" || !viewerControlReady) {
+        showToast("Control belum siap di APK.");
         return;
     }
 
@@ -3730,7 +3805,16 @@ async function toggleViewerFullscreen() {
 }
 
 
-function stopViewerStream() {
+function stopViewerStream(options = {}) {
+
+    if (!options.keepAutoReconnect) {
+        viewerAutoReconnectEnabled = false;
+    }
+
+    if (viewerReconnectTimer) {
+        clearTimeout(viewerReconnectTimer);
+        viewerReconnectTimer = null;
+    }
 
     if (
         viewerPeerConnection
