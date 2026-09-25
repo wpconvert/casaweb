@@ -8,6 +8,7 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Intent
 import android.content.pm.ServiceInfo
+import android.media.projection.MediaProjection
 import android.os.Build
 import android.os.Handler
 import android.os.IBinder
@@ -55,6 +56,15 @@ class ScreenCaptureService : Service() {
 
         private const val TAG =
             "ScreenCaptureService"
+
+        // Cache the MediaProjection permission token while the app process
+        // is still alive. This lets START_STICKY service restarts recover
+        // without asking the user for permission again.
+        @Volatile
+        private var cachedResultCode: Int? = null
+
+        @Volatile
+        private var cachedResultData: Intent? = null
     }
 
     // =========================
@@ -70,6 +80,19 @@ class ScreenCaptureService : Service() {
 
     private var realtimeManager:
         RealtimeManager? = null
+
+    // =========================
+    // MEDIA PROJECTION STATE
+    // =========================
+
+    private var mediaProjection:
+        MediaProjection? = null
+
+    private var manualStopRequested =
+        false
+
+    private var captureStartInProgress =
+        false
 
     // =========================
     // WAKE LOCK
@@ -104,6 +127,11 @@ class ScreenCaptureService : Service() {
         )
 
         createNotificationChannel()
+
+        Log.d(
+            TAG,
+            "Service siap; cachedProjection=${cachedResultData != null}"
+        )
     }
 
     // =========================
@@ -118,43 +146,40 @@ class ScreenCaptureService : Service() {
 
         Log.d(
             TAG,
-            "onStartCommand action=${intent?.action}"
+            "onStartCommand action=${intent?.action} startId=$startId"
         )
 
         when (intent?.action) {
 
-            // =========================
-            // STOP
-            // =========================
-
             ACTION_STOP -> {
+
+                manualStopRequested = true
 
                 Log.d(
                     TAG,
                     "ACTION_STOP diterima"
                 )
 
+                prefs.edit()
+                    .putBoolean(
+                        KEY_ACTIVE,
+                        false
+                    )
+                    .apply()
+
                 stopCapture()
 
                 return START_NOT_STICKY
             }
 
-            // =========================
-            // START
-            // =========================
-
             ACTION_START -> {
+
+                manualStopRequested = false
 
                 Log.d(
                     TAG,
                     "ACTION_START diterima"
                 )
-
-                /*
-                 * Foreground service harus aktif
-                 * SEBELUM RealtimeManager menjalankan
-                 * ScreenCapturerAndroid.
-                 */
 
                 startForegroundWithNotification()
 
@@ -183,8 +208,7 @@ class ScreenCaptureService : Service() {
                     }
 
                 if (
-                    resultCode !=
-                    Activity.RESULT_OK ||
+                    resultCode != Activity.RESULT_OK ||
                     data == null
                 ) {
 
@@ -193,6 +217,16 @@ class ScreenCaptureService : Service() {
                         "Data MediaProjection tidak valid"
                     )
 
+                    // Do not destroy a currently working capture because
+                    // an accidental/duplicate START arrived without data.
+                    if (realtimeManager?.isCapturing() == true) {
+                        Log.w(
+                            TAG,
+                            "Capture masih aktif; START tanpa data diabaikan"
+                        )
+                        return START_STICKY
+                    }
+
                     prefs.edit()
                         .putBoolean(
                             KEY_ACTIVE,
@@ -200,19 +234,56 @@ class ScreenCaptureService : Service() {
                         )
                         .apply()
 
-                    stopForegroundCompat()
-                    stopSelf()
-
-                    return START_NOT_STICKY
+                    return START_STICKY
                 }
+
+                cachedResultCode = resultCode
+                cachedResultData = data
 
                 startCapture(
                     resultCode,
                     data
                 )
             }
+
+            null -> {
+
+                // START_STICKY restart after the service was killed.
+                // Reuse the cached MediaProjection token if the process
+                // itself is still alive.
+                val cachedCode = cachedResultCode
+                val cachedData = cachedResultData
+
+                if (
+                    !manualStopRequested &&
+                    cachedCode != null &&
+                    cachedData != null &&
+                    realtimeManager == null
+                ) {
+
+                    Log.w(
+                        TAG,
+                        "Service direstart Android; memulihkan capture dari token cached"
+                    )
+
+                    startForegroundWithNotification()
+
+                    startCapture(
+                        cachedCode,
+                        cachedData
+                    )
+                } else {
+
+                    Log.d(
+                        TAG,
+                        "START_STICKY restart tanpa token capture; menunggu ACTION_START"
+                    )
+                }
+            }
         }
 
+        // Keep the foreground capture service alive if Android temporarily
+        // recreates the service. The explicit STOP path returns NOT_STICKY.
         return START_STICKY
     }
 
@@ -258,6 +329,14 @@ class ScreenCaptureService : Service() {
         data: Intent
     ) {
 
+        if (captureStartInProgress) {
+            Log.d(
+                TAG,
+                "startCapture sedang berjalan, skip duplicate"
+            )
+            return
+        }
+
         if (
             realtimeManager != null &&
             realtimeManager?.isCapturing() == true
@@ -275,6 +354,8 @@ class ScreenCaptureService : Service() {
             TAG,
             "Menyiapkan screen capture"
         )
+
+        captureStartInProgress = true
 
         try {
 
@@ -312,6 +393,16 @@ class ScreenCaptureService : Service() {
             // =========================
 
             acquireScreenWakeLock()
+
+            // =========================
+            // MEDIA PROJECTION HOLDER
+            // =========================
+
+            // Keep a reference to the projection for the lifetime of this
+            // service. ScreenCapturerAndroid also owns/uses the same token.
+            // We intentionally do not call stop() here during transient
+            // service cleanup.
+            mediaProjection = null
 
             // =========================
             // REALTIME MANAGER
@@ -413,6 +504,8 @@ class ScreenCaptureService : Service() {
                 "WebRTC screen capture AKTIF"
             )
 
+            captureStartInProgress = false
+
             // =========================
             // CLOUDFLARE PUBLISH
             // =========================
@@ -436,6 +529,7 @@ class ScreenCaptureService : Service() {
                 )
                 .apply()
 
+            captureStartInProgress = false
             cleanupCapture()
             stopForegroundCompat()
             stopSelf()
@@ -455,6 +549,7 @@ class ScreenCaptureService : Service() {
                 )
                 .apply()
 
+            captureStartInProgress = false
             cleanupCapture()
             stopForegroundCompat()
             stopSelf()
@@ -595,6 +690,8 @@ class ScreenCaptureService : Service() {
     // =========================
 
     private fun stopCapture() {
+
+        manualStopRequested = true
 
         Log.d(
             TAG,
@@ -857,19 +954,33 @@ class ScreenCaptureService : Service() {
 
     override fun onDestroy() {
 
-        Log.d(
+        Log.w(
             TAG,
-            "ScreenCaptureService dihancurkan"
+            "ScreenCaptureService dihancurkan; manualStop=$manualStopRequested"
         )
 
         cleanupCapture()
 
-        prefs.edit()
-            .putBoolean(
-                KEY_ACTIVE,
-                false
+        if (manualStopRequested) {
+            cachedResultCode = null
+            cachedResultData = null
+            mediaProjection = null
+
+            prefs.edit()
+                .putBoolean(
+                    KEY_ACTIVE,
+                    false
+                )
+                .apply()
+        } else {
+            // Do NOT erase the cached projection token or mark capture
+            // inactive on a transient/system service destruction.
+            // START_STICKY can then recreate the service and resume it.
+            Log.w(
+                TAG,
+                "Transient destroy: mempertahankan state capture untuk START_STICKY"
             )
-            .apply()
+        }
 
         super.onDestroy()
     }
