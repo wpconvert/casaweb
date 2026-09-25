@@ -2621,8 +2621,6 @@ class RealtimeManager(
         channel.registerObserver(
             object : DataChannel.Observer {
 
-                private var readySent = false
-
                 override fun onBufferedAmountChange(
                     previousAmount: Long
                 ) {
@@ -2642,47 +2640,8 @@ class RealtimeManager(
                     if (state == DataChannel.State.OPEN) {
                         Log.d(
                             TAG,
-                            "BUILD MARKER: CONTROL OPEN 2026-09-25-C"
+                            "BUILD MARKER: CONTROL BRIDGE OPEN 2026-09-25-E"
                         )
-
-                        // Tell the browser that the Android-side channel is
-                        // genuinely OPEN. The browser must not treat its own
-                        // onopen event as proof that Android is ready.
-                        if (!readySent) {
-                            readySent = true
-
-                            val readyJson = JSONObject().apply {
-                                put("type", "control_ready")
-                                put("version", 1)
-                                put("ts", System.currentTimeMillis())
-                            }.toString()
-
-                            controlHandler.postDelayed({
-                                try {
-                                    if (channel.state() == DataChannel.State.OPEN) {
-                                        val buffer = DataChannel.Buffer(
-                                            ByteBuffer.wrap(
-                                                readyJson.toByteArray(Charsets.UTF_8)
-                                            ),
-                                            false
-                                        )
-
-                                        channel.send(buffer)
-
-                                        Log.d(
-                                            TAG,
-                                            "CONTROL READY handshake dikirim"
-                                        )
-                                    }
-                                } catch (e: Exception) {
-                                    Log.e(
-                                        TAG,
-                                        "Gagal mengirim CONTROL READY handshake",
-                                        e
-                                    )
-                                }
-                            }, 50L)
-                        }
                     }
 
                     if (
@@ -2691,7 +2650,6 @@ class RealtimeManager(
                     ) {
                         controlChannelReady = false
                         controlSetupStarted = false
-                        readySent = false
                     }
                 }
 
