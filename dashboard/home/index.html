@@ -213,14 +213,47 @@ tr:last-child td{border-bottom:0}
 }
 .controls{display:flex;justify-content:center;gap:8px;margin-top:14px}
 .modal-backdrop{
-    display:none;position:fixed;inset:0;background:rgba(0,0,0,.65);
-    z-index:100;align-items:center;justify-content:center;padding:20px
+    display:none;position:fixed;inset:0;background:rgba(0,0,0,.72);
+    z-index:100;align-items:center;justify-content:center;padding:20px;
+    backdrop-filter:blur(5px);-webkit-backdrop-filter:blur(5px);
+    opacity:0;
 }
-.modal-backdrop.show{display:flex}
+.modal-backdrop.show{display:flex;animation:modalBackdropIn .18s ease forwards}
 .modal{
-    width:min(480px,100%);background:#11161d;border:1px solid #303b48;
-    border-radius:12px;padding:20px;box-shadow:0 20px 60px rgba(0,0,0,.45)
+    width:min(440px,100%);background:linear-gradient(180deg,#151b23,#10151b);
+    border:1px solid #34404e;border-radius:16px;padding:22px;
+    box-shadow:0 28px 80px rgba(0,0,0,.58);
+    transform:translateY(12px) scale(.97);opacity:0;
 }
+.modal-backdrop.show .modal{animation:modalCardIn .22s cubic-bezier(.2,.8,.2,1) forwards}
+.modal h3{display:flex;align-items:center;gap:9px;font-size:17px;margin-bottom:7px}
+@keyframes modalBackdropIn{from{opacity:0}to{opacity:1}}
+@keyframes modalCardIn{from{opacity:0;transform:translateY(12px) scale(.97)}to{opacity:1;transform:translateY(0) scale(1)}}
+.modal-input-wrap{display:flex;justify-content:center;margin:4px 0 16px}
+.pin-input{
+    width:150px!important;max-width:150px;text-align:center;letter-spacing:5px;
+    font-size:18px;font-weight:700;padding:12px 10px!important;border-radius:10px!important;
+}
+.pin-input::placeholder{letter-spacing:0;font-size:11px;font-weight:400}
+.passcode-card{
+    background:#121820;border:1px solid #293441;border-radius:12px;padding:14px 15px;
+    transition:border-color .18s,transform .18s,background .18s;
+}
+.passcode-card:hover{border-color:#3a4858;background:#151c25;transform:translateY(-1px)}
+.passcode-card + .passcode-card{margin-top:9px}
+.passcode-card-main{display:flex;align-items:center;justify-content:space-between;gap:14px}
+.passcode-card-info{min-width:0;display:flex;align-items:center;gap:12px}
+.passcode-folder-icon{width:38px;height:38px;border-radius:10px;display:flex;align-items:center;justify-content:center;background:#1b2530;border:1px solid #303d4a;font-size:18px;flex:none}
+.passcode-card-title{font-size:12px;font-weight:700;color:#e5e9ed;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.passcode-card-desc{font-size:10px;color:#697687;margin-top:4px}
+.passcode-status{font-size:10px;white-space:nowrap}
+.passcode-status.locked{color:#e6b86a}
+.passcode-status.unlocked{color:#687687}
+.passcode-card-actions{display:flex;align-items:center;gap:7px;margin-top:12px;padding-top:11px;border-top:1px solid #202a35}
+.passcode-toggle{border:1px solid #354250;background:#1a222b;color:#aab5c0;border-radius:7px;padding:6px 10px;font-size:10px;cursor:pointer}
+.passcode-toggle:hover{border-color:#526172}
+.passcode-toggle.locked{color:#e6b86a;border-color:#665331;background:#241f15}
+.passcode-list-empty{padding:28px 15px;text-align:center;color:#657181;font-size:11px;border:1px dashed #2b3540;border-radius:10px}
 .modal h3{font-size:17px;margin-bottom:7px}
 .modal p{font-size:11px;color:var(--muted);line-height:1.5;margin-bottom:17px}
 .form-label{display:block;color:#aeb8c2;font-size:11px;margin-bottom:7px}
@@ -421,18 +454,10 @@ tr:last-child td{border-bottom:0}
     </div>
 
     <div class="notice">
-        Menu Passcode berhasil dibuka. Pengaturan PIN kategori akan ditambahkan pada langkah berikutnya.
+        Pilih kategori yang ingin dikunci. Setiap kategori bisa mempunyai PIN sendiri.
     </div>
 
-    <div class="settings-list">
-        <div class="setting">
-            <div>
-                <div class="setting-title">Passcode Menu</div>
-                <div class="setting-desc">Untuk Kunci Category.</div>
-            </div>
-            <span class="status online"><span class="dot online"></span>Protected</span>
-        </div>
-    </div>
+    <div id="passcodeCategoryList"></div>
 </section>
 
 <section class="page" id="page-settings">
@@ -4132,8 +4157,250 @@ function backdropClose(
 const PASSCODE_MENU_KEY =
     "remotephone_passcode_menu";
 
+const CATEGORY_LOCK_KEY =
+    "remotephone_category_locks_v1";
+
 const DEFAULT_PASSCODE =
     "123456";
+
+function getCategoryLocks() {
+
+    return read(
+        CATEGORY_LOCK_KEY,
+        {}
+    );
+}
+
+function saveCategoryLocks(locks) {
+
+    write(
+        CATEGORY_LOCK_KEY,
+        locks
+    );
+}
+
+function categoryPhoneCount(categoryId) {
+
+    return devices.filter(
+        d =>
+            isRegistered(d) &&
+            deviceCategory(d.id) === categoryId
+    ).length;
+}
+
+function renderPasscodeCategories() {
+
+    const container =
+        document.getElementById(
+            "passcodeCategoryList"
+        );
+
+    if (!container) return;
+
+    const categories =
+        getCategories();
+
+    const locks =
+        getCategoryLocks();
+
+    if (!categories.length) {
+        container.innerHTML =
+            `<div class="passcode-list-empty">Belum ada kategori.</div>`;
+        return;
+    }
+
+    container.innerHTML =
+        categories.map(category => {
+
+            const state =
+                locks[category.id] || {};
+
+            const locked =
+                state.locked === true;
+
+            const count =
+                categoryPhoneCount(category.id);
+
+            return `
+                <div class="passcode-card">
+                    <div class="passcode-card-main">
+                        <div class="passcode-card-info">
+                            <div class="passcode-folder-icon">📁</div>
+                            <div style="min-width:0">
+                                <div class="passcode-card-title">${escapeHtml(category.name)}</div>
+                                <div class="passcode-card-desc">${count} phone · ${locked ? "Kategori dikunci" : "Kategori terbuka"}</div>
+                            </div>
+                        </div>
+                        <div class="passcode-status ${locked ? "locked" : "unlocked"}">
+                            ${locked ? "🔒 Terkunci" : "🔓 Terbuka"}
+                        </div>
+                    </div>
+
+                    <div class="passcode-card-actions">
+                        <button
+                            class="passcode-toggle ${locked ? "locked" : ""}"
+                            onclick="toggleCategoryLock('${escapeHtml(category.id)}')"
+                        >
+                            ${locked ? "🔓 Buka kunci" : "🔒 Kunci kategori"}
+                        </button>
+
+                        <button
+                            class="btn small"
+                            onclick="openCategoryPinModal('${escapeHtml(category.id)}')"
+                        >
+                            ${locked ? "Ganti PIN" : "Atur PIN"}
+                        </button>
+                    </div>
+                </div>
+            `;
+        }).join("");
+}
+
+function toggleCategoryLock(categoryId) {
+
+    const locks =
+        getCategoryLocks();
+
+    const state =
+        locks[categoryId] || {};
+
+    if (state.locked === true) {
+        state.locked = false;
+        locks[categoryId] = state;
+        saveCategoryLocks(locks);
+        renderPasscodeCategories();
+        showToast("Kategori dibuka.");
+        return;
+    }
+
+    if (!state.pin) {
+        openCategoryPinModal(
+            categoryId,
+            true
+        );
+        return;
+    }
+
+    state.locked = true;
+    locks[categoryId] = state;
+    saveCategoryLocks(locks);
+    renderPasscodeCategories();
+    showToast("Kategori dikunci.");
+}
+
+function openCategoryPinModal(
+    categoryId,
+    lockAfterSave = false
+) {
+
+    const category =
+        getCategories().find(
+            x => x.id === categoryId
+        );
+
+    if (!category) return;
+
+    const locks =
+        getCategoryLocks();
+
+    const state =
+        locks[categoryId] || {};
+
+    openModal(
+        `🔐 ${state.pin ? "Ganti PIN" : "Atur PIN"}`,
+        `
+            <p>
+                PIN untuk kategori <strong>${escapeHtml(category.name)}</strong>.
+                Gunakan beberapa angka saja.
+            </p>
+
+            <label class="form-label" style="text-align:center">PIN kategori</label>
+
+            <div class="modal-input-wrap">
+                <input
+                    class="input pin-input"
+                    id="categoryPinInput"
+                    type="password"
+                    inputmode="numeric"
+                    autocomplete="new-password"
+                    maxlength="8"
+                    pattern="[0-9]*"
+                    placeholder="••••"
+                    oninput="this.value=this.value.replace(/\D/g,'')"
+                    onkeydown="
+                        if (event.key === 'Enter') {
+                            saveCategoryPin('${escapeHtml(categoryId)}', ${lockAfterSave ? "true" : "false"});
+                        }
+                    "
+                >
+            </div>
+
+            <div
+                id="categoryPinError"
+                style="display:none;color:var(--red);font-size:10px;text-align:center;margin-top:-8px;margin-bottom:12px"
+            >
+                PIN minimal 4 angka.
+            </div>
+
+            <div class="modal-actions">
+                <button class="btn" onclick="closeModal()">Batal</button>
+                <button
+                    class="btn primary"
+                    onclick="saveCategoryPin('${escapeHtml(categoryId)}', ${lockAfterSave ? "true" : "false"})"
+                >
+                    Simpan PIN
+                </button>
+            </div>
+        `
+    );
+}
+
+function saveCategoryPin(
+    categoryId,
+    lockAfterSave = false
+) {
+
+    const input =
+        document.getElementById(
+            "categoryPinInput"
+        );
+
+    const error =
+        document.getElementById(
+            "categoryPinError"
+        );
+
+    const pin =
+        input?.value ||
+        "";
+
+    if (!/^\d{4,8}$/.test(pin)) {
+        if (error) error.style.display = "block";
+        input?.focus();
+        return;
+    }
+
+    const locks =
+        getCategoryLocks();
+
+    const state =
+        locks[categoryId] || {};
+
+    state.pin = pin;
+    state.locked =
+        lockAfterSave ? true : state.locked === true;
+
+    locks[categoryId] = state;
+    saveCategoryLocks(locks);
+
+    closeModal();
+    renderPasscodeCategories();
+    showToast(
+        lockAfterSave
+            ? "PIN disimpan dan kategori dikunci."
+            : "PIN kategori berhasil disimpan."
+    );
+}
 
 function getPasscodeMenu() {
 
@@ -4238,6 +4505,8 @@ function verifyPasscodeMenu() {
     openPage(
         "passcode"
     );
+
+    renderPasscodeCategories();
 }
 
 
