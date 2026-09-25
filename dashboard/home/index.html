@@ -2172,14 +2172,35 @@ function deleteCategory(
         return;
     }
 
+    // Jika category memakai PIN, penghapusan juga harus
+    // melewati PIN category tersebut. Category tanpa PIN
+    // tetap bisa dihapus seperti biasa.
+    if (isCategoryLocked(id)) {
+        openCategoryDeleteGate(
+            id,
+            () => confirmDeleteCategory(id)
+        );
+        return;
+    }
+
+    openCategoryDeleteConfirm(id);
+}
+
+function openCategoryDeleteConfirm(id) {
+
+    const category =
+        getCategories().find(
+            x => x.id === id
+        );
+
+    if (!category) return;
+
     openModal(
         "Hapus Category",
         `
             <p>
                 Category
-                <b>${escapeHtml(
-                    category.name
-                )}</b>
+                <b>${escapeHtml(category.name)}</b>
                 akan dihapus.
             </p>
 
@@ -2190,28 +2211,101 @@ function deleteCategory(
             </p>
 
             <div class="modal-actions">
-
-                <button
-                    class="btn"
-                    onclick="closeModal()"
-                >
+                <button class="btn" onclick="closeModal()">
                     Cancel
                 </button>
-
                 <button
                     class="btn danger"
-                    onclick="
-                        confirmDeleteCategory(
-                            '${escapeHtml(id)}'
-                        )
-                    "
+                    onclick="confirmDeleteCategory('${escapeHtml(id)}')"
                 >
                     Delete Category
                 </button>
-
             </div>
         `
     );
+}
+
+function openCategoryDeleteGate(categoryId, onSuccess) {
+
+    const category =
+        getCategories().find(
+            x => x.id === categoryId
+        );
+
+    if (!category) return;
+
+    const locks = getCategoryLocks();
+    const state = locks[categoryId] || {};
+
+    openModal(
+        `🔒 Hapus ${escapeHtml(category.name)}`,
+        `
+            <p style="text-align:center;margin-bottom:13px">
+                Category ini memakai PIN.
+                Masukkan PIN untuk melanjutkan penghapusan.
+            </p>
+
+            <div class="modal-input-wrap">
+                <input
+                    class="input pin-input"
+                    id="categoryDeletePinInput"
+                    data-category-id="${escapeHtml(categoryId)}"
+                    type="password"
+                    inputmode="numeric"
+                    autocomplete="off"
+                    maxlength="8"
+                    pattern="[0-9]*"
+                    placeholder="PIN"
+                    oninput="this.value=this.value.replace(/\D/g,'')"
+                    onkeydown="if (event.key === 'Enter') verifyCategoryDelete();"
+                >
+            </div>
+
+            <div
+                id="categoryDeletePinError"
+                style="display:none;color:var(--red);font-size:10px;text-align:center;margin-top:-8px;margin-bottom:12px"
+            >
+                PIN kategori salah.
+            </div>
+
+            <div class="modal-actions">
+                <button class="btn" onclick="closeModal()">
+                    Batal
+                </button>
+                <button class="btn danger" onclick="verifyCategoryDelete()">
+                    Lanjutkan
+                </button>
+            </div>
+        `
+    );
+
+    setTimeout(() => {
+        document.getElementById("categoryDeletePinInput")?.focus();
+    }, 70);
+}
+
+function verifyCategoryDelete() {
+
+    const input = document.getElementById("categoryDeletePinInput");
+    const error = document.getElementById("categoryDeletePinError");
+    const categoryId = input?.dataset.categoryId || "";
+    const state = getCategoryLocks()[categoryId] || {};
+
+    if (!state.pin || (input?.value || "") !== state.pin) {
+        if (error) {
+            error.style.display = "block";
+            error.textContent = "PIN kategori salah.";
+        }
+        input?.focus();
+        input?.select();
+        return;
+    }
+
+    closeModal();
+
+    // Setelah PIN benar, tampilkan konfirmasi hapus.
+    // Jadi PIN bukan langsung menghapus tanpa konfirmasi.
+    openCategoryDeleteConfirm(categoryId);
 }
 
 function confirmDeleteCategory(id) {
