@@ -533,6 +533,7 @@ let devices = [];
 let registrationRequests = [];
 let phoneTab = "registered";
 let selectedCategoryId = null;
+let categoryContextActive = false;
 let selectedDevice = null;
 let refreshTimer = null;
 let autoRefresh = true;
@@ -1441,16 +1442,31 @@ function renderDevices() {
 
                         <td>
 
-                            <button
-                                class="btn danger small"
-                                onclick="
-                                    deleteDevice(
-                                        '${escapeHtml(d.id)}'
-                                    )
-                                "
-                            >
-                                Delete
-                            </button>
+                            <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+
+                                <button
+                                    class="btn small"
+                                    onclick="
+                                        openViewer(
+                                            '${escapeHtml(d.id)}'
+                                        )
+                                    "
+                                >
+                                    Open Phone
+                                </button>
+
+                                <button
+                                    class="btn danger small"
+                                    onclick="
+                                        deleteDevice(
+                                            '${escapeHtml(d.id)}'
+                                        )
+                                    "
+                                >
+                                    Delete
+                                </button>
+
+                            </div>
 
                         </td>
 
@@ -2277,6 +2293,7 @@ function openCategory(id) {
 function openCategoryUnlocked(id) {
 
     selectedCategoryId = id;
+    categoryContextActive = true;
     phoneTab = "registered";
 
     openPage(
@@ -2487,7 +2504,14 @@ function openViewer(id) {
     const categoryId =
         deviceCategory(device.id);
 
-    if (isCategoryLocked(categoryId)) {
+    // Jika user sedang berada di dalam Category,
+    // PIN Category sudah dimasukkan di depan.
+    // HP di dalam Category tidak meminta PIN kedua.
+    const alreadyInsideCategory =
+        categoryContextActive === true &&
+        selectedCategoryId === categoryId;
+
+    if (!alreadyInsideCategory && isCategoryLocked(categoryId)) {
 
         openCategoryAccessGate(
             categoryId,
@@ -4044,7 +4068,7 @@ function openPage(
 
         devices: [
             "Devices",
-            "Registered device yang sudah di-approve."
+            "Registered device dan akses ke phone."
         ],
 
         files: [
@@ -4122,8 +4146,19 @@ document
                         return;
                     }
 
+                    const targetPage =
+                        button.dataset.page;
+
+                    // Begitu user pindah ke Dashboard, Devices, Files,
+                    // atau Settings, akses Category sebelumnya berakhir.
+                    // Jika nanti membuka Category lagi, PIN diminta lagi.
+                    if (targetPage !== "phones") {
+                        categoryContextActive = false;
+                        selectedCategoryId = null;
+                    }
+
                     openPage(
-                        button.dataset.page
+                        targetPage
                     );
                 }
             );
@@ -4227,6 +4262,7 @@ function openCategoryAccessGate(categoryId, onSuccess) {
             <div class="modal-input-wrap">
                 <input
                     class="input pin-input category-access-pin"
+                    style="width:92px;text-align:center;letter-spacing:5px"
                     id="categoryAccessPinInput"
                     data-category-id="${escapeHtml(categoryId)}"
                     type="password"
@@ -4502,6 +4538,7 @@ function openCategoryPinModal(
             <div class="modal-input-wrap">
                 <input
                     class="input pin-input"
+                    style="width:92px;text-align:center;letter-spacing:5px"
                     id="categoryPinInput"
                     type="password"
                     inputmode="numeric"
@@ -4607,6 +4644,7 @@ function openPasscodeGate() {
             <div class="modal-input-wrap">
                 <input
                     class="input pin-input master-passcode-input"
+                    style="width:92px;text-align:center;letter-spacing:5px"
                     id="passcodeInput"
                     type="password"
                     inputmode="numeric"
