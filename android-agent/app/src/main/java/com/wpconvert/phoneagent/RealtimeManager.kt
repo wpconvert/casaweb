@@ -20,6 +20,7 @@ import org.webrtc.DataChannel
 import org.webrtc.RTCStats
 import org.webrtc.RTCStatsReport
 import java.net.HttpURLConnection
+import java.nio.ByteBuffer
 import java.net.URL
 import kotlin.concurrent.thread
 
@@ -455,6 +456,9 @@ class RealtimeManager(
 
             // Explicitly request the same output format that the
             // Cloudflare publisher uses.
+            // Keep native 720x1600 @ 30 FPS. Do not downscale here:
+            // the browser should receive the real phone resolution and WebRTC
+            // can adapt bitrate without us introducing an extra software resize.
             source.adaptOutputFormat(
                 720,
                 1600,
@@ -905,7 +909,7 @@ class RealtimeManager(
         val delayMs =
             when {
                 state == PeerConnection.PeerConnectionState.DISCONNECTED &&
-                    videoReconnectAttempts == 1 -> 3000L
+                    videoReconnectAttempts == 1 -> 1500L
 
                 videoReconnectAttempts <= 1 -> 1000L
                 videoReconnectAttempts == 2 -> 2000L
@@ -2617,6 +2621,8 @@ class RealtimeManager(
         channel.registerObserver(
             object : DataChannel.Observer {
 
+                private var readySent = false
+
                 override fun onBufferedAmountChange(
                     previousAmount: Long
                 ) {
@@ -2638,6 +2644,45 @@ class RealtimeManager(
                             TAG,
                             "BUILD MARKER: CONTROL OPEN 2026-09-25-C"
                         )
+
+                        // Tell the browser that the Android-side channel is
+                        // genuinely OPEN. The browser must not treat its own
+                        // onopen event as proof that Android is ready.
+                        if (!readySent) {
+                            readySent = true
+
+                            val readyJson = JSONObject().apply {
+                                put("type", "control_ready")
+                                put("version", 1)
+                                put("ts", System.currentTimeMillis())
+                            }.toString()
+
+                            controlHandler.postDelayed({
+                                try {
+                                    if (channel.state() == DataChannel.State.OPEN) {
+                                        val buffer = DataChannel.Buffer(
+                                            ByteBuffer.wrap(
+                                                readyJson.toByteArray(Charsets.UTF_8)
+                                            ),
+                                            false
+                                        )
+
+                                        channel.send(buffer)
+
+                                        Log.d(
+                                            TAG,
+                                            "CONTROL READY handshake dikirim"
+                                        )
+                                    }
+                                } catch (e: Exception) {
+                                    Log.e(
+                                        TAG,
+                                        "Gagal mengirim CONTROL READY handshake",
+                                        e
+                                    )
+                                }
+                            }, 50L)
+                        }
                     }
 
                     if (
@@ -2646,6 +2691,7 @@ class RealtimeManager(
                     ) {
                         controlChannelReady = false
                         controlSetupStarted = false
+                        readySent = false
                     }
                 }
 
