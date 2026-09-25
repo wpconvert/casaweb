@@ -117,21 +117,23 @@ h1{font-size:25px;margin-bottom:6px}
 }
 .folder-delete:hover{color:var(--red);background:#211618}
  .phone-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
-.category-multi-view{display:none;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin:0 0 16px}
-.category-multi-card{background:#090d12;border:1px solid var(--border);border-radius:12px;padding:10px;min-width:0}
-.category-multi-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:9px}
+/* Multi-phone view: exactly two columns, with a bounded screen height so the
+   cards never become taller than the viewport. Additional phones continue below. */
+.category-multi-view{display:none;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin:0 0 16px;align-items:start}
+.category-multi-card{background:#090d12;border:1px solid var(--border);border-radius:12px;padding:10px;min-width:0;overflow:hidden}
+.category-multi-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:8px;min-height:20px}
 .category-multi-title{min-width:0;font-size:11px;font-weight:700;color:#dce2e8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.category-multi-status{font-size:9px;white-space:nowrap;color:var(--muted2)}
+.category-multi-status{font-size:9px;white-space:nowrap;color:var(--muted2);flex:none}
 .category-multi-status.online{color:var(--green)}
 .category-multi-status.offline{color:var(--red)}
-.category-multi-screen{width:100%;aspect-ratio:9 / 20;background:#000;border:2px solid #252e38;border-radius:12px;display:flex;align-items:center;justify-content:center;overflow:hidden;position:relative}
-.category-multi-video{display:block;width:100%;height:100%;object-fit:contain;background:#000;touch-action:none;user-select:none;-webkit-user-select:none;-webkit-user-drag:none}
+.category-multi-screen{width:100%;height:min(54vh,500px);min-height:300px;background:#000;border:2px solid #252e38;border-radius:12px;display:flex;align-items:center;justify-content:center;overflow:hidden;position:relative}
+.category-multi-video{display:block;width:auto;height:100%;max-width:100%;max-height:100%;aspect-ratio:9 / 20;object-fit:contain;background:#000;touch-action:none;user-select:none;-webkit-user-select:none;-webkit-user-drag:none}
 .category-multi-message{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;text-align:center;padding:20px;color:#657181;font-size:10px;line-height:1.6;background:#050709}
 .category-multi-footer{display:flex;align-items:center;justify-content:flex-end;margin-top:8px}
 .category-multi-refresh{border:1px solid var(--border2);background:#151c24;color:#aeb8c2;border-radius:7px;padding:6px 9px;font-size:10px}
 .category-multi-refresh:hover{background:#1d2630;color:#fff}
 .category-multi-refresh.spinning{opacity:.7}
-@media(max-width:760px){.category-multi-view{grid-template-columns:1fr}}
+@media(max-width:760px){.category-multi-view{grid-template-columns:1fr}.category-multi-screen{height:min(68vh,500px);min-height:280px}}
 .card{
     background:var(--panel);border:1px solid var(--border);border-radius:11px;padding:17px
 }
