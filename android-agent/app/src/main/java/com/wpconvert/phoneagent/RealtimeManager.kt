@@ -151,7 +151,7 @@ class RealtimeManager(
         // memakai source RealtimeManager.kt versi terbaru.
         Log.d(
             TAG,
-            "BUILD MARKER: REMOTEPHONE CONTROL FIX 2026-09-24-A"
+            "BUILD MARKER: REMOTEPHONE CONTROL FIX 2026-09-25-D"
         )
 
         Log.d(
@@ -1246,27 +1246,90 @@ class RealtimeManager(
 
         currentSessionId = sessionId
 
-        Log.d(TAG, "Publish pipeline dimulai: control transport -> controls -> video")
+        controlSetupStarted = false
+        controlTransportReady = false
+        controlTransportInProgress = false
+        controlApplicationInProgress = false
+        controlChannelReady = false
+        controlChannelId = null
 
-        /*
-         * IMPORTANT:
-         *
-         * Cloudflare mengharuskan mutation pada satu session diserialkan.
-         * Karena session ini awalnya adalah media-only, kita lebih dulu
-         * menambahkan DataChannel transport, menyelesaikan SDP exchange,
-         * menunggu CONNECTED, lalu membuat publication "controls".
-         *
-         * Setelah seluruh control transport/application channel siap,
-         * barulah media publish dilakukan.
-         *
-         * Dengan urutan ini tidak ada lagi:
-         *   video publish -> renegotiate -> control publish
-         * yang saling bertabrakan pada session yang sama.
-         */
+        try { controlDataChannel?.unregisterObserver() } catch (_: Exception) { }
+        try { controlDataChannel?.dispose() } catch (_: Exception) { }
+        controlDataChannel = null
 
-        ensureControlReadyBeforeVideoPublish(sessionId) {
-            Log.d(TAG, "CONTROL: pipeline awal selesai, sekarang publish video")
-            publishVideoToCloudflareInternal(sessionId, deviceId, callback)
+        Log.d(TAG, "BUILD MARKER: PUBLISH ORDER MEDIA-FIRST CONTROL-SECOND 2026-09-25-D")
+        Log.d(TAG, "Publish pipeline: VIDEO -> CONNECTED -> DataChannel transport -> controls")
+
+        // Cloudflare's current recipe for adding DataChannels to an existing
+        // media connection starts after the media offer/answer is complete.
+        // We therefore publish video first, then add the DataChannel transport,
+        // then allocate the controls publication. Every mutation is serialized.
+        publishVideoToCloudflareInternal(
+            sessionId,
+            deviceId
+        ) { videoSuccess, answer, videoError ->
+
+            if (!videoSuccess) {
+                callback(false, answer, videoError)
+                return@publishVideoToCloudflareInternal
+            }
+
+            // Preserve the existing working video behavior.
+            callback(true, answer, null)
+
+            // Start control setup only after the media answer has been applied.
+            controlHandler.post {
+                startControlAfterMediaConnected(sessionId)
+            }
+        }
+    }
+
+    private fun startControlAfterMediaConnected(
+        sessionId: String
+    ) {
+        if (controlSetupStarted) {
+            Log.d(TAG, "CONTROL: setup sudah berjalan, skip duplicate start")
+            return
+        }
+
+        controlSetupStarted = true
+        Log.d(TAG, "CONTROL: menunggu media PeerConnection CONNECTED")
+
+        waitForPeerConnectionConnected(30000L) { connected ->
+            if (!connected) {
+                Log.e(TAG, "CONTROL: media PeerConnection tidak CONNECTED")
+                controlSetupStarted = false
+                return@waitForPeerConnectionConnected
+            }
+
+            Log.d(TAG, "BUILD MARKER: MEDIA CONNECTED -> CONTROL TRANSPORT 2026-09-25-D")
+
+            ensureControlTransport(sessionId) { transportOk, transportError ->
+                if (!transportOk) {
+                    Log.e(TAG, "CONTROL: transport gagal: $transportError")
+                    controlSetupStarted = false
+                    return@ensureControlTransport
+                }
+
+                Log.d(TAG, "CONTROL: transport READY -> publish controls")
+
+                createPublisherControlChannel(sessionId) { controlOk, controlError ->
+                    if (!controlOk) {
+                        Log.e(TAG, "CONTROL: publication controls gagal: $controlError")
+                        controlSetupStarted = false
+                        return@createPublisherControlChannel
+                    }
+
+                    waitForControlReady(15000L) { ready ->
+                        if (ready) {
+                            Log.d(TAG, "BUILD MARKER: CONTROL READY 2026-09-25-D")
+                        } else {
+                            Log.e(TAG, "CONTROL: publication controls ada tetapi native channel tidak OPEN")
+                            controlSetupStarted = false
+                        }
+                    }
+                }
+            }
         }
     }
 
