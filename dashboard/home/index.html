@@ -2246,7 +2246,35 @@ function confirmDeleteCategory(id) {
 // OPEN CATEGORY
 // =====================================================
 
+let categoryAccessCallback = null;
+
+function isCategoryLocked(categoryId) {
+
+    const locks =
+        getCategoryLocks();
+
+    const state =
+        locks[categoryId] || {};
+
+    return state.locked === true && !!state.pin;
+}
+
 function openCategory(id) {
+
+    if (isCategoryLocked(id)) {
+
+        openCategoryAccessGate(
+            id,
+            () => openCategoryUnlocked(id)
+        );
+
+        return;
+    }
+
+    openCategoryUnlocked(id);
+}
+
+function openCategoryUnlocked(id) {
 
     selectedCategoryId = id;
     phoneTab = "registered";
@@ -2455,6 +2483,24 @@ function openViewer(id) {
     if (!device) {
         return;
     }
+
+    const categoryId =
+        deviceCategory(device.id);
+
+    if (isCategoryLocked(categoryId)) {
+
+        openCategoryAccessGate(
+            categoryId,
+            () => openViewerUnlocked(device)
+        );
+
+        return;
+    }
+
+    openViewerUnlocked(device);
+}
+
+function openViewerUnlocked(device) {
 
     selectedDevice = device;
 
@@ -4151,6 +4197,143 @@ function backdropClose(
 }
 
 // =====================================================
+// CATEGORY ACCESS GATE
+// =====================================================
+
+function openCategoryAccessGate(categoryId, onSuccess) {
+
+    const category =
+        getCategories().find(
+            x => x.id === categoryId
+        );
+
+    if (!category) return;
+
+    const locks =
+        getCategoryLocks();
+
+    const state =
+        locks[categoryId] || {};
+
+    categoryAccessCallback = onSuccess;
+
+    openModal(
+        `🔒 ${escapeHtml(category.name)}`,
+        `
+            <p style="text-align:center;margin-bottom:13px">
+                Masukkan PIN kategori untuk membuka akses.
+            </p>
+
+            <div class="modal-input-wrap">
+                <input
+                    class="input pin-input category-access-pin"
+                    id="categoryAccessPinInput"
+                    data-category-id="${escapeHtml(categoryId)}"
+                    type="password"
+                    inputmode="numeric"
+                    autocomplete="off"
+                    maxlength="8"
+                    pattern="[0-9]*"
+                    placeholder="PIN"
+                    oninput="this.value=this.value.replace(/\D/g,'')"
+                    onkeydown="
+                        if (event.key === 'Enter') {
+                            verifyCategoryAccess();
+                        }
+                    "
+                >
+            </div>
+
+            <div
+                id="categoryAccessError"
+                style="display:none;color:var(--red);font-size:10px;text-align:center;margin-top:-8px;margin-bottom:12px"
+            >
+                PIN kategori salah.
+            </div>
+
+            <div class="modal-actions">
+                <button class="btn" onclick="cancelCategoryAccess()">
+                    Batal
+                </button>
+                <button class="btn primary" onclick="verifyCategoryAccess()">
+                    Buka
+                </button>
+            </div>
+        `
+    );
+
+    setTimeout(() => {
+        document
+            .getElementById("categoryAccessPinInput")
+            ?.focus();
+    }, 70);
+}
+
+function verifyCategoryAccess() {
+
+    const input =
+        document.getElementById(
+            "categoryAccessPinInput"
+        );
+
+    const error =
+        document.getElementById(
+            "categoryAccessError"
+        );
+
+    const categoryId =
+        selectedCategoryId;
+
+    // Untuk akses langsung dari Phones / Open Phone,
+    // ambil category dari callback bila selectedCategoryId belum sesuai.
+    const locks =
+        getCategoryLocks();
+
+    const pin =
+        input?.value || "";
+
+    let matchedCategoryId = categoryId;
+
+    if (categoryAccessCallback) {
+        // Callback hanya disimpan setelah gate dibuat; PIN diverifikasi
+        // terhadap kategori yang sedang dikunci melalui field dataset.
+        const modalInput = input;
+        matchedCategoryId =
+            modalInput?.dataset.categoryId || categoryId;
+    }
+
+    const state =
+        locks[matchedCategoryId] || {};
+
+    if (!state.pin || pin !== state.pin) {
+        if (error) {
+            error.style.display = "block";
+            error.textContent = "PIN kategori salah.";
+        }
+        input?.focus();
+        input?.select();
+        return;
+    }
+
+    const callback =
+        categoryAccessCallback;
+
+    categoryAccessCallback = null;
+
+    closeModal();
+
+    if (typeof callback === "function") {
+        callback();
+    }
+}
+
+function cancelCategoryAccess() {
+
+    categoryAccessCallback = null;
+    closeModal();
+}
+
+// =====================================================
 // PASSCODE MENU
 // =====================================================
 
@@ -4417,29 +4600,28 @@ function openPasscodeGate() {
     openModal(
         "🔐 Passcode",
         `
-            <p>
-                Masukkan passcode untuk membuka
-                pengaturan keamanan.
+            <p style="text-align:center;margin-bottom:13px">
+                Masukkan passcode untuk membuka pengaturan keamanan.
             </p>
 
-            <label class="form-label">
-                Passcode
-            </label>
-
-            <input
-                class="input"
-                id="passcodeInput"
-                type="password"
-                inputmode="numeric"
-                autocomplete="off"
-                maxlength="32"
-                placeholder="Masukkan passcode"
-                onkeydown="
-                    if (event.key === 'Enter') {
-                        verifyPasscodeMenu();
-                    }
-                "
-            >
+            <div class="modal-input-wrap">
+                <input
+                    class="input pin-input master-passcode-input"
+                    id="passcodeInput"
+                    type="password"
+                    inputmode="numeric"
+                    autocomplete="off"
+                    maxlength="8"
+                    pattern="[0-9]*"
+                    placeholder="PIN"
+                    oninput="this.value=this.value.replace(/\D/g,'')"
+                    onkeydown="
+                        if (event.key === 'Enter') {
+                            verifyPasscodeMenu();
+                        }
+                    "
+                >
+            </div>
 
             <div
                 id="passcodeError"
