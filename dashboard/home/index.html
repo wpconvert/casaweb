@@ -116,7 +116,22 @@ h1{font-size:25px;margin-bottom:6px}
     background:transparent;color:#667382;border-radius:6px
 }
 .folder-delete:hover{color:var(--red);background:#211618}
-.phone-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+ .phone-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+.category-multi-view{display:none;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin:0 0 16px}
+.category-multi-card{background:#090d12;border:1px solid var(--border);border-radius:12px;padding:10px;min-width:0}
+.category-multi-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:9px}
+.category-multi-title{min-width:0;font-size:11px;font-weight:700;color:#dce2e8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.category-multi-status{font-size:9px;white-space:nowrap;color:var(--muted2)}
+.category-multi-status.online{color:var(--green)}
+.category-multi-status.offline{color:var(--red)}
+.category-multi-screen{width:100%;aspect-ratio:9 / 20;background:#000;border:2px solid #252e38;border-radius:12px;display:flex;align-items:center;justify-content:center;overflow:hidden;position:relative}
+.category-multi-video{display:block;width:100%;height:100%;object-fit:contain;background:#000;touch-action:none;user-select:none;-webkit-user-select:none;-webkit-user-drag:none}
+.category-multi-message{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;text-align:center;padding:20px;color:#657181;font-size:10px;line-height:1.6;background:#050709}
+.category-multi-footer{display:flex;align-items:center;justify-content:flex-end;margin-top:8px}
+.category-multi-refresh{border:1px solid var(--border2);background:#151c24;color:#aeb8c2;border-radius:7px;padding:6px 9px;font-size:10px}
+.category-multi-refresh:hover{background:#1d2630;color:#fff}
+.category-multi-refresh.spinning{opacity:.7}
+@media(max-width:760px){.category-multi-view{grid-template-columns:1fr}}
 .card{
     background:var(--panel);border:1px solid var(--border);border-radius:11px;padding:17px
 }
@@ -400,13 +415,19 @@ tr:last-child td{border-bottom:0}
     <div class="toolbar">
         <div>
             <h2 id="phonesHeading" style="font-size:16px;margin-bottom:4px">Registered Phones</h2>
-            <p style="font-size:10px;color:var(--muted)">Phone hanya masuk ke sini setelah kamu approve registration request.</p>
+            <p id="phonesDescription" style="font-size:10px;color:var(--muted)">Phone hanya masuk ke sini setelah kamu approve registration request.</p>
         </div>
-        <div class="toolbar-right">
+        <div class="toolbar-right" style="flex-wrap:wrap;justify-content:flex-end">
+            <div id="categoryControls" class="toolbar-right" style="display:none">
+                <button class="btn primary" id="categoryOpenAllButton" onclick="toggleCategoryAllPhones()">Open All Phone</button>
+                <button class="btn" onclick="refreshAllCategoryPhones()">↻ Refresh All</button>
+            </div>
             <input class="search" id="phoneSearch" placeholder="Search phone..." oninput="renderPhones()">
             <button class="btn" onclick="loadDevices()">↻ Refresh</button>
         </div>
     </div>
+
+    <div class="category-multi-view" id="categoryMultiView"></div>
 
     <div class="notice" id="requestNotice" style="display:none">
         Device yang menekan <b>Request Register</b> dari APK akan muncul di halaman ini. Tidak akan langsung masuk ke Registered.
@@ -546,6 +567,10 @@ let viewerPublisherSessionId = null;
 let viewerAutoReconnectEnabled = false;
 let viewerReconnectTimer = null;
 let viewerReconnectInProgress = false;
+
+// Multi-phone Category Viewer
+const categoryStreams = new Map();
+let categoryAllPhonesOpen = false;
 
 const STORAGE = {
     categories: "rp_categories_v3",
@@ -958,6 +983,12 @@ function setPhoneTab(tab) {
             ? "block"
             : "none";
 
+    const inCategory = selectedCategoryId !== null && tab === "registered";
+    setCategoryControlsVisible(inCategory);
+    if (!inCategory) {
+        closeCategoryMultiView();
+    }
+
     renderPhones();
 }
 
@@ -972,6 +1003,11 @@ function renderPhones() {
         document.getElementById(
             "phoneGrid"
         );
+
+    // Multi-view hanya dipakai saat sedang berada di dalam Category.
+    if (selectedCategoryId === null || phoneTab !== "registered") {
+        hideCategoryMultiView();
+    }
 
     const search =
         (
@@ -2172,35 +2208,14 @@ function deleteCategory(
         return;
     }
 
-    // Jika category memakai PIN, penghapusan juga harus
-    // melewati PIN category tersebut. Category tanpa PIN
-    // tetap bisa dihapus seperti biasa.
-    if (isCategoryLocked(id)) {
-        openCategoryDeleteGate(
-            id,
-            () => confirmDeleteCategory(id)
-        );
-        return;
-    }
-
-    openCategoryDeleteConfirm(id);
-}
-
-function openCategoryDeleteConfirm(id) {
-
-    const category =
-        getCategories().find(
-            x => x.id === id
-        );
-
-    if (!category) return;
-
     openModal(
         "Hapus Category",
         `
             <p>
                 Category
-                <b>${escapeHtml(category.name)}</b>
+                <b>${escapeHtml(
+                    category.name
+                )}</b>
                 akan dihapus.
             </p>
 
@@ -2211,101 +2226,28 @@ function openCategoryDeleteConfirm(id) {
             </p>
 
             <div class="modal-actions">
-                <button class="btn" onclick="closeModal()">
+
+                <button
+                    class="btn"
+                    onclick="closeModal()"
+                >
                     Cancel
                 </button>
+
                 <button
                     class="btn danger"
-                    onclick="confirmDeleteCategory('${escapeHtml(id)}')"
+                    onclick="
+                        confirmDeleteCategory(
+                            '${escapeHtml(id)}'
+                        )
+                    "
                 >
                     Delete Category
                 </button>
+
             </div>
         `
     );
-}
-
-function openCategoryDeleteGate(categoryId, onSuccess) {
-
-    const category =
-        getCategories().find(
-            x => x.id === categoryId
-        );
-
-    if (!category) return;
-
-    const locks = getCategoryLocks();
-    const state = locks[categoryId] || {};
-
-    openModal(
-        `🔒 Hapus ${escapeHtml(category.name)}`,
-        `
-            <p style="text-align:center;margin-bottom:13px">
-                Category ini memakai PIN.
-                Masukkan PIN untuk melanjutkan penghapusan.
-            </p>
-
-            <div class="modal-input-wrap">
-                <input
-                    class="input pin-input"
-                    id="categoryDeletePinInput"
-                    data-category-id="${escapeHtml(categoryId)}"
-                    type="password"
-                    inputmode="numeric"
-                    autocomplete="off"
-                    maxlength="8"
-                    pattern="[0-9]*"
-                    placeholder="PIN"
-                    oninput="this.value=this.value.replace(/\D/g,'')"
-                    onkeydown="if (event.key === 'Enter') verifyCategoryDelete();"
-                >
-            </div>
-
-            <div
-                id="categoryDeletePinError"
-                style="display:none;color:var(--red);font-size:10px;text-align:center;margin-top:-8px;margin-bottom:12px"
-            >
-                PIN kategori salah.
-            </div>
-
-            <div class="modal-actions">
-                <button class="btn" onclick="closeModal()">
-                    Batal
-                </button>
-                <button class="btn danger" onclick="verifyCategoryDelete()">
-                    Lanjutkan
-                </button>
-            </div>
-        `
-    );
-
-    setTimeout(() => {
-        document.getElementById("categoryDeletePinInput")?.focus();
-    }, 70);
-}
-
-function verifyCategoryDelete() {
-
-    const input = document.getElementById("categoryDeletePinInput");
-    const error = document.getElementById("categoryDeletePinError");
-    const categoryId = input?.dataset.categoryId || "";
-    const state = getCategoryLocks()[categoryId] || {};
-
-    if (!state.pin || (input?.value || "") !== state.pin) {
-        if (error) {
-            error.style.display = "block";
-            error.textContent = "PIN kategori salah.";
-        }
-        input?.focus();
-        input?.select();
-        return;
-    }
-
-    closeModal();
-
-    // Setelah PIN benar, tampilkan konfirmasi hapus.
-    // Jadi PIN bukan langsung menghapus tanpa konfirmasi.
-    openCategoryDeleteConfirm(categoryId);
 }
 
 function confirmDeleteCategory(id) {
@@ -2389,6 +2331,8 @@ function openCategoryUnlocked(id) {
     selectedCategoryId = id;
     categoryContextActive = true;
     phoneTab = "registered";
+    closeCategoryMultiView();
+    setCategoryControlsVisible(true);
 
     openPage(
         "phones"
@@ -2577,6 +2521,448 @@ function openCategoryUnlocked(id) {
                 `;
             })
             .join("");
+}
+
+
+// =====================================================
+// CATEGORY MULTI-PHONE VIEWER
+// =====================================================
+
+function setCategoryControlsVisible(visible) {
+    const controls = document.getElementById("categoryControls");
+    if (!controls) return;
+    controls.style.display = visible ? "flex" : "none";
+
+    const description = document.getElementById("phonesDescription");
+    if (description && visible) {
+        description.textContent = "Semua phone di Category ini bisa ditampilkan bersamaan.";
+    }
+}
+
+function updateCategoryAllButton() {
+    const button = document.getElementById("categoryOpenAllButton");
+    if (!button) return;
+    button.textContent = categoryAllPhonesOpen ? "Close All Phone" : "Open All Phone";
+    button.classList.toggle("primary", !categoryAllPhonesOpen);
+}
+
+function getCurrentCategoryDevices() {
+    if (selectedCategoryId === null || phoneTab !== "registered") return [];
+    return devices.filter(
+        d => isRegistered(d) && deviceCategory(d.id) === selectedCategoryId
+    );
+}
+
+function categoryMultiCardHtml(device) {
+    const id = escapeHtml(device.id);
+    const name = escapeHtml(deviceName(device));
+    const online = device.online === true;
+
+    return `
+        <div class="category-multi-card" id="category-stream-card-${id}">
+            <div class="category-multi-head">
+                <div class="category-multi-title">📱 ${name}</div>
+                <div class="category-multi-status ${online ? "online" : "offline"}" id="category-stream-status-${id}">
+                    ${online ? "Online" : "Offline"}
+                </div>
+            </div>
+            <div class="category-multi-screen">
+                <video
+                    class="category-multi-video"
+                    id="category-stream-video-${id}"
+                    autoplay
+                    playsinline
+                    muted
+                    disablepictureinpicture
+                    controlslist="nodownload noplaybackrate nofullscreen noremoteplayback"
+                ></video>
+                <div class="category-multi-message" id="category-stream-message-${id}">
+                    Menunggu koneksi...
+                </div>
+            </div>
+            <div class="category-multi-footer">
+                <button class="category-multi-refresh" id="category-stream-refresh-${id}" onclick="refreshCategoryPhone('${id}')">↻ Refresh</button>
+            </div>
+        </div>
+    `;
+}
+
+function renderCategoryMultiView() {
+    const container = document.getElementById("categoryMultiView");
+    if (!container) return;
+
+    const list = getCurrentCategoryDevices();
+
+    if (!list.length) {
+        container.innerHTML = "";
+        container.style.display = "none";
+        return;
+    }
+
+    container.innerHTML = list.map(categoryMultiCardHtml).join("");
+    container.style.display = "grid";
+}
+
+function showCategoryMultiView() {
+    if (selectedCategoryId === null || phoneTab !== "registered") return;
+
+    const list = getCurrentCategoryDevices();
+    if (!list.length) {
+        showToast("Category ini belum memiliki registered phone.");
+        return;
+    }
+
+    categoryAllPhonesOpen = true;
+    updateCategoryAllButton();
+    renderCategoryMultiView();
+
+    list.forEach(device => {
+        startCategoryPhoneStream(device.id);
+    });
+}
+
+function hideCategoryMultiView() {
+    const container = document.getElementById("categoryMultiView");
+    if (container) {
+        container.style.display = "none";
+    }
+}
+
+function toggleCategoryAllPhones() {
+    if (categoryAllPhonesOpen) {
+        closeCategoryMultiView();
+    } else {
+        showCategoryMultiView();
+    }
+}
+
+function closeCategoryMultiView() {
+    categoryAllPhonesOpen = false;
+    updateCategoryAllButton();
+
+    for (const [deviceId, state] of categoryStreams.entries()) {
+        stopCategoryPhoneStream(deviceId, state);
+    }
+
+    categoryStreams.clear();
+    hideCategoryMultiView();
+}
+
+function stopCategoryPhoneStream(deviceId, knownState = null) {
+    const state = knownState || categoryStreams.get(deviceId);
+    if (!state) return;
+
+    state.closed = true;
+
+    if (state.reconnectTimer) {
+        clearTimeout(state.reconnectTimer);
+        state.reconnectTimer = null;
+    }
+
+    if (state.pc) {
+        try { state.pc.close(); } catch (_) {}
+    }
+
+    if (state.video) {
+        try { state.video.pause(); } catch (_) {}
+        state.video.srcObject = null;
+    }
+}
+
+function scheduleCategoryPhoneReconnect(deviceId) {
+    const state = categoryStreams.get(deviceId);
+    if (!state || state.closed || !categoryAllPhonesOpen) return;
+    if (state.reconnectTimer) return;
+
+    state.reconnectTimer = setTimeout(() => {
+        state.reconnectTimer = null;
+        if (!categoryStreams.has(deviceId) || state.closed || !categoryAllPhonesOpen) return;
+        startCategoryPhoneStream(deviceId, true);
+    }, 1800);
+}
+
+async function refreshCategoryPhone(deviceId) {
+    if (selectedCategoryId === null || !categoryAllPhonesOpen) return;
+
+    const device = devices.find(d => d.id === deviceId);
+    if (!device) return;
+
+    const oldState = categoryStreams.get(deviceId);
+    if (oldState) {
+        stopCategoryPhoneStream(deviceId, oldState);
+        categoryStreams.delete(deviceId);
+    }
+
+    const button = document.getElementById(`category-stream-refresh-${deviceId}`);
+    if (button) {
+        button.classList.add("spinning");
+        button.disabled = true;
+    }
+
+    await startCategoryPhoneStream(deviceId);
+
+    if (button) {
+        button.classList.remove("spinning");
+        button.disabled = false;
+    }
+}
+
+async function refreshAllCategoryPhones() {
+    if (selectedCategoryId === null) return;
+
+    const list = getCurrentCategoryDevices();
+    if (!list.length) {
+        showToast("Tidak ada phone di Category ini.");
+        return;
+    }
+
+    if (!categoryAllPhonesOpen) {
+        showCategoryMultiView();
+        return;
+    }
+
+    for (const device of list) {
+        const oldState = categoryStreams.get(device.id);
+        if (oldState) {
+            stopCategoryPhoneStream(device.id, oldState);
+            categoryStreams.delete(device.id);
+        }
+    }
+
+    list.forEach(device => startCategoryPhoneStream(device.id));
+    showToast("Semua phone sedang dihubungkan ulang.");
+}
+
+async function startCategoryPhoneStream(deviceId, isReconnect = false) {
+    if (!categoryAllPhonesOpen || selectedCategoryId === null) return;
+
+    const device = devices.find(d => d.id === deviceId);
+    if (!device) return;
+
+    let state = categoryStreams.get(deviceId);
+
+    if (state && !isReconnect && !state.closed) {
+        return;
+    }
+
+    if (state) {
+        stopCategoryPhoneStream(deviceId, state);
+    }
+
+    const video = document.getElementById(`category-stream-video-${deviceId}`);
+    const message = document.getElementById(`category-stream-message-${deviceId}`);
+    const status = document.getElementById(`category-stream-status-${deviceId}`);
+
+    if (!video || !message) return;
+
+    state = {
+        deviceId,
+        pc: null,
+        sessionId: null,
+        video,
+        message,
+        status,
+        closed: false,
+        reconnectTimer: null
+    };
+
+    categoryStreams.set(deviceId, state);
+
+    const setMessage = (text, visible = true) => {
+        if (state.closed) return;
+        message.textContent = text;
+        message.style.display = visible ? "flex" : "none";
+    };
+
+    const setStatus = (text, online = false) => {
+        if (state.closed || !status) return;
+        status.textContent = text;
+        status.className = `category-multi-status ${online ? "online" : text === "Offline" ? "offline" : ""}`;
+    };
+
+    video.controls = false;
+    video.autoplay = true;
+    video.playsInline = true;
+    video.muted = true;
+    video.srcObject = null;
+    setMessage(isReconnect ? "Menghubungkan ulang..." : "Menghubungkan...");
+    setStatus("Connecting", false);
+
+    try {
+        // 1. Receiver session
+        const sessionResponse = await fetch(`${API_URL}/api/session`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: "{}",
+            cache: "no-store"
+        });
+
+        if (!sessionResponse.ok) {
+            throw new Error(`Session HTTP ${sessionResponse.status}`);
+        }
+
+        const sessionData = await sessionResponse.json();
+        state.sessionId = sessionData.sessionId;
+
+        if (!state.sessionId) {
+            throw new Error("Cloudflare sessionId tidak ditemukan.");
+        }
+
+        if (state.closed || categoryStreams.get(deviceId) !== state) return;
+
+        // 2. TURN / STUN
+        const turnResponse = await fetch(`${API_URL}/api/turn`, {
+            method: "GET",
+            cache: "no-store"
+        });
+
+        if (!turnResponse.ok) {
+            throw new Error(`TURN HTTP ${turnResponse.status}`);
+        }
+
+        const turnData = await turnResponse.json();
+        if (!Array.isArray(turnData?.iceServers) || !turnData.iceServers.length) {
+            throw new Error("Cloudflare TURN server tidak tersedia.");
+        }
+
+        if (state.closed || categoryStreams.get(deviceId) !== state) return;
+
+        // 3. Receiver PeerConnection
+        const pc = new RTCPeerConnection({
+            iceCandidatePoolSize: 10,
+            iceTransportPolicy: "all",
+            bundlePolicy: "max-bundle",
+            rtcpMuxPolicy: "require",
+            iceServers: turnData.iceServers
+        });
+
+        state.pc = pc;
+
+        pc.onconnectionstatechange = () => {
+            if (state.closed || categoryStreams.get(deviceId) !== state) return;
+
+            if (pc.connectionState === "connected") {
+                setStatus("Live", true);
+            } else if (["failed", "disconnected"].includes(pc.connectionState)) {
+                setStatus("Reconnecting", false);
+                scheduleCategoryPhoneReconnect(deviceId);
+            } else if (pc.connectionState === "closed") {
+                setStatus("Offline", false);
+            }
+        };
+
+        pc.oniceconnectionstatechange = () => {
+            if (state.closed || categoryStreams.get(deviceId) !== state) return;
+            if (["failed", "disconnected"].includes(pc.iceConnectionState)) {
+                scheduleCategoryPhoneReconnect(deviceId);
+            }
+        };
+
+        pc.ontrack = event => {
+            if (state.closed || categoryStreams.get(deviceId) !== state) return;
+
+            const stream = event.streams?.[0] || new MediaStream();
+            if (!event.streams?.[0]) stream.addTrack(event.track);
+
+            video.srcObject = stream;
+            video.play().catch(() => {});
+            setMessage("", false);
+            setStatus("Live", true);
+        };
+
+        video.onerror = () => {
+            if (state.closed || categoryStreams.get(deviceId) !== state) return;
+            setStatus("Reconnecting", false);
+            scheduleCategoryPhoneReconnect(deviceId);
+        };
+
+        // 4. Ask Cloudflare for the publisher's remote video track
+        const subscribeResponse = await fetch(`${API_URL}/api/subscribe`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                sessionId: state.sessionId,
+                deviceId
+            }),
+            cache: "no-store"
+        });
+
+        const subscribeData = await subscribeResponse.json();
+
+        if (!subscribeResponse.ok) {
+            throw new Error(
+                subscribeData.error || `Subscribe HTTP ${subscribeResponse.status}`
+            );
+        }
+
+        const offer = subscribeData?.sessionDescription || subscribeData?.cloudflare?.sessionDescription;
+        if (!offer?.sdp) {
+            throw new Error("Cloudflare tidak mengembalikan SDP offer subscriber.");
+        }
+
+        if (state.closed || categoryStreams.get(deviceId) !== state) return;
+
+        await pc.setRemoteDescription(new RTCSessionDescription({
+            type: "offer",
+            sdp: offer.sdp
+        }));
+
+        const answer = await pc.createAnswer();
+        await pc.setLocalDescription(answer);
+
+        await waitForIceGatheringComplete(pc, 10000);
+
+        const localAnswerSdp = pc.localDescription?.sdp || "";
+        const candidateCount = localAnswerSdp.split("\n").filter(line => line.startsWith("a=candidate:")).length;
+
+        if (!candidateCount) {
+            throw new Error("Browser tidak menghasilkan ICE candidate.");
+        }
+
+        if (state.closed || categoryStreams.get(deviceId) !== state) return;
+
+        // 5. Send answer to Cloudflare
+        const renegotiateResponse = await fetch(`${API_URL}/api/renegotiate`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                sessionId: state.sessionId,
+                sdp: localAnswerSdp
+            }),
+            cache: "no-store"
+        });
+
+        const renegotiateData = await renegotiateResponse.json();
+        if (!renegotiateResponse.ok) {
+            throw new Error(
+                renegotiateData.error || `Renegotiate HTTP ${renegotiateResponse.status}`
+            );
+        }
+
+        if (state.closed || categoryStreams.get(deviceId) !== state) return;
+
+        setMessage("Menunggu video dari phone...");
+        const connected = await waitForPeerConnection(pc, 15000);
+
+        if (!connected) {
+            throw new Error("WebRTC belum connected.");
+        }
+
+        if (state.closed || categoryStreams.get(deviceId) !== state) return;
+
+        // Kalau track belum masuk setelah connection, beri status tetap Connecting.
+        if (!video.srcObject) {
+            setStatus("Connected", true);
+        }
+
+    } catch (error) {
+        if (state.closed || categoryStreams.get(deviceId) !== state) return;
+
+        console.error(`[Category Viewer] ${deviceId}:`, error);
+        setStatus("Reconnect", false);
+        setMessage(`Belum tersambung.\n${error?.message || "Unknown error"}`);
+        scheduleCategoryPhoneReconnect(deviceId);
+    }
 }
 
 
@@ -4098,6 +4484,11 @@ function openPage(
     page
 ) {
 
+    if (page !== "phones") {
+        closeCategoryMultiView();
+        setCategoryControlsVisible(false);
+    }
+
     if (
         page !==
         "viewer"
@@ -4247,6 +4638,8 @@ document
                     // atau Settings, akses Category sebelumnya berakhir.
                     // Jika nanti membuka Category lagi, PIN diminta lagi.
                     if (targetPage !== "phones") {
+                        closeCategoryMultiView();
+                        setCategoryControlsVisible(false);
                         categoryContextActive = false;
                         selectedCategoryId = null;
                     }
