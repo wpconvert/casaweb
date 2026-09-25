@@ -323,6 +323,7 @@ tr:last-child td{border-bottom:0}
         <li><button data-page="phones"><span class="nav-icon">▣</span><span>Phones</span></button></li>
         <li><button data-page="devices"><span class="nav-icon">◉</span><span>Devices</span></button></li>
         <li><button data-page="files"><span class="nav-icon">▱</span><span>Files</span></button></li>
+        <li><button data-page="passcode"><span class="nav-icon">🔐</span><span>Passcode</span></button></li>
         <li><button data-page="settings"><span class="nav-icon">⚙</span><span>Settings</span></button></li>
     </ul>
     <div class="sidebar-bottom">
@@ -407,6 +408,29 @@ tr:last-child td{border-bottom:0}
             <div class="notice">Belum ada backend file storage. UI ini sengaja dibuat sebagai tempat untuk integrasi storage nanti.</div>
             <div class="file-row"><div class="file-info"><div class="file-icon">📁</div><div><div class="file-title">Phone Files</div><div class="file-note">Folder untuk file dari device</div></div></div><span class="mono">folder</span></div>
             <div class="file-row"><div class="file-info"><div class="file-icon">📁</div><div><div class="file-title">Shared</div><div class="file-note">File yang dibagikan antar device</div></div></div><span class="mono">folder</span></div>
+        </div>
+    </div>
+</section>
+
+<section class="page" id="page-passcode">
+    <div class="section-head">
+        <div>
+            <h2>Passcode</h2>
+            <p>Pengaturan keamanan kategori dan akses phone.</p>
+        </div>
+    </div>
+
+    <div class="notice">
+        Menu Passcode berhasil dibuka. Pengaturan PIN kategori akan ditambahkan pada langkah berikutnya.
+    </div>
+
+    <div class="settings-list">
+        <div class="setting">
+            <div>
+                <div class="setting-title">Passcode Menu</div>
+                <div class="setting-desc">Passcode awal untuk membuka menu ini: 123456. PIN dapat diubah pada tahap berikutnya.</div>
+            </div>
+            <span class="status online"><span class="dot online"></span>Protected</span>
         </div>
     </div>
 </section>
@@ -3962,6 +3986,11 @@ function openPage(
             "Pengaturan dashboard."
         ],
 
+        passcode: [
+            "Passcode",
+            "Pengaturan keamanan kategori dan akses phone."
+        ],
+
         viewer: [
             "Phone Viewer",
             "Remote control viewer."
@@ -4012,10 +4041,20 @@ document
             button.addEventListener(
                 "click",
 
-                () =>
+                () => {
+
+                    if (
+                        button.dataset.page ===
+                        "passcode"
+                    ) {
+                        openPasscodeGate();
+                        return;
+                    }
+
                     openPage(
                         button.dataset.page
-                    )
+                    );
+                }
             );
 
         }
@@ -4085,6 +4124,122 @@ function backdropClose(
         closeModal();
     }
 }
+
+// =====================================================
+// PASSCODE MENU
+// =====================================================
+
+const PASSCODE_MENU_KEY =
+    "remotephone_passcode_menu";
+
+const DEFAULT_PASSCODE =
+    "123456";
+
+function getPasscodeMenu() {
+
+    const saved =
+        localStorage.getItem(
+            PASSCODE_MENU_KEY
+        );
+
+    return saved || DEFAULT_PASSCODE;
+}
+
+function openPasscodeGate() {
+
+    openModal(
+        "🔐 Passcode",
+        `
+            <p>
+                Masukkan passcode untuk membuka
+                pengaturan keamanan.
+            </p>
+
+            <label class="form-label">
+                Passcode
+            </label>
+
+            <input
+                class="input"
+                id="passcodeInput"
+                type="password"
+                inputmode="numeric"
+                autocomplete="off"
+                maxlength="32"
+                placeholder="Masukkan passcode"
+                onkeydown="
+                    if (event.key === 'Enter') {
+                        verifyPasscodeMenu();
+                    }
+                "
+            >
+
+            <div
+                id="passcodeError"
+                style="display:none;color:var(--red);font-size:10px;margin-top:-7px;margin-bottom:12px"
+            >
+                Passcode salah.
+            </div>
+
+            <div class="modal-actions">
+
+                <button
+                    class="btn"
+                    onclick="closeModal()"
+                >
+                    Batal
+                </button>
+
+                <button
+                    class="btn primary"
+                    onclick="verifyPasscodeMenu()"
+                >
+                    Buka
+                </button>
+
+            </div>
+        `
+    );
+}
+
+function verifyPasscodeMenu() {
+
+    const input =
+        document.getElementById(
+            "passcodeInput"
+        );
+
+    const error =
+        document.getElementById(
+            "passcodeError"
+        );
+
+    const value =
+        input?.value ||
+        "";
+
+    if (
+        value !==
+        getPasscodeMenu()
+    ) {
+
+        if (error) {
+            error.style.display =
+                "block";
+        }
+
+        input?.focus();
+        input?.select();
+        return;
+    }
+
+    closeModal();
+
+    openPage(
+        "passcode"
+    );
+}
+
 
 
 // =====================================================
