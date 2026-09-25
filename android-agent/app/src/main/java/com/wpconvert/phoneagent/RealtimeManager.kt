@@ -74,6 +74,9 @@ class RealtimeManager(
     private var currentSessionId:
         String? = null
 
+    private var currentDeviceId:
+        String? = null
+
     // =====================================================
     // CONTROL DATACHANNEL
     // =====================================================
@@ -98,6 +101,28 @@ class RealtimeManager(
 
     @Volatile
     private var controlApplicationInProgress = false
+
+    // =====================================================
+    // VIDEO AUTO-RECONNECT
+    // =====================================================
+
+    @Volatile
+    private var videoReconnectInProgress = false
+
+    @Volatile
+    private var videoReconnectGeneration = 0L
+
+    private var videoReconnectAttempts = 0
+
+    private val videoReconnectHandler =
+        Handler(Looper.getMainLooper())
+
+    private val videoReconnectRunnable =
+        object : Runnable {
+            override fun run() {
+                reconnectVideoIfNeeded()
+            }
+        }
 
     private val controlHandler =
         Handler(Looper.getMainLooper())
@@ -323,6 +348,14 @@ class RealtimeManager(
                             )
 
                             capturing = false
+
+                            // MediaProjection itself was revoked/stopped.
+                            // Do not fake a successful video state. A fresh
+                            // projection permission must come from the service.
+                            Log.w(
+                                TAG,
+                                "VIDEO: MediaProjection STOP -> menunggu service memulai capture kembali"
+                            )
                         }
                     }
                 )
@@ -724,9 +757,11 @@ class RealtimeManager(
                                 newState ==
                                     PeerConnection.PeerConnectionState.CONNECTED
                             ) {
+                                videoReconnectAttempts = 0
+
                                 Log.d(
                                     TAG,
-                                    "BUILD MARKER: PEER CONNECTED 2026-09-25-C"
+                                    "BUILD MARKER: PEER CONNECTED 2026-09-25-VIDEO-RECONNECT"
                                 )
 
                                 if (controlChannelReady) {
@@ -735,6 +770,17 @@ class RealtimeManager(
                                         "CONTROL: PeerConnection CONNECTED dan control sudah READY"
                                     )
                                 }
+                            }
+
+                            if (
+                                newState ==
+                                    PeerConnection.PeerConnectionState.DISCONNECTED ||
+                                newState ==
+                                    PeerConnection.PeerConnectionState.FAILED ||
+                                newState ==
+                                    PeerConnection.PeerConnectionState.CLOSED
+                            ) {
+                                scheduleVideoReconnect(newState)
                             }
                         }
                     }
@@ -781,6 +827,180 @@ class RealtimeManager(
                 "Gagal membuat PeerConnection",
                 e
             )
+        }
+    }
+
+    // =====================================================
+    // VIDEO AUTO-RECONNECT
+    // =====================================================
+
+    private fun scheduleVideoReconnect(
+        state: PeerConnection.PeerConnectionState
+    ) {
+        if (!capturing) {
+            Log.w(
+                TAG,
+                "VIDEO RECONNECT: capture tidak aktif, skip state=$state"
+            )
+            return
+        }
+
+        if (videoReconnectInProgress) {
+            Log.d(
+                TAG,
+                "VIDEO RECONNECT: sudah berjalan, skip state=$state"
+            )
+            return
+        }
+
+        videoReconnectAttempts++
+
+        val delayMs =
+            when (videoReconnectAttempts.coerceAtMost(5)) {
+                1 -> 1000L
+                2 -> 2000L
+                3 -> 4000L
+                4 -> 6000L
+                else -> 10000L
+            }
+
+        Log.w(
+            TAG,
+            "VIDEO RECONNECT: state=$state attempt=$videoReconnectAttempts delay=${delayMs}ms"
+        )
+
+        videoReconnectHandler.removeCallbacks(videoReconnectRunnable)
+        videoReconnectHandler.postDelayed(
+            videoReconnectRunnable,
+            delayMs
+        )
+    }
+
+    private fun reconnectVideoIfNeeded() {
+        if (!capturing) {
+            Log.w(
+                TAG,
+                "VIDEO RECONNECT: capture sudah tidak aktif"
+            )
+            return
+        }
+
+        if (videoReconnectInProgress) {
+            return
+        }
+
+        val oldConnection = peerConnection
+        val state =
+            oldConnection?.connectionState()
+
+        if (
+            state == PeerConnection.PeerConnectionState.CONNECTED
+        ) {
+            videoReconnectAttempts = 0
+            return
+        }
+
+        videoReconnectInProgress = true
+        val generation = ++videoReconnectGeneration
+
+        Log.w(
+            TAG,
+            "VIDEO RECONNECT: rebuilding PeerConnection generation=$generation state=$state"
+        )
+
+        controlHandler.post {
+            try {
+                // The old control channel belongs to the old PeerConnection.
+                // Dispose it before rebuilding so control setup can be recreated
+                // cleanly after video comes back.
+                try {
+                    controlDataChannel?.unregisterObserver()
+                } catch (_: Exception) {
+                }
+
+                try {
+                    controlDataChannel?.dispose()
+                } catch (_: Exception) {
+                }
+
+                controlDataChannel = null
+                controlChannelReady = false
+                controlChannelId = null
+                controlSetupStarted = false
+                controlTransportReady = false
+                controlTransportInProgress = false
+                controlApplicationInProgress = false
+
+                try {
+                    oldConnection?.close()
+                } catch (_: Exception) {
+                }
+
+                if (peerConnection === oldConnection) {
+                    peerConnection = null
+                }
+
+                createPeerConnection()
+
+                val sessionId = currentSessionId
+
+                if (sessionId.isNullOrBlank()) {
+                    Log.e(
+                        TAG,
+                        "VIDEO RECONNECT: currentSessionId kosong; menunggu publisher/service membuat session baru"
+                    )
+                    return@post
+                }
+
+                Log.d(
+                    TAG,
+                    "VIDEO RECONNECT: publish ulang menggunakan session=$sessionId"
+                )
+
+                publishVideoToCloudflareInternal(
+                    sessionId,
+                    currentDeviceId ?: ""
+                ) { success, _, error ->
+
+                    controlHandler.post {
+                        videoReconnectInProgress = false
+
+                        if (success) {
+                            videoReconnectAttempts = 0
+
+                            Log.d(
+                                TAG,
+                                "VIDEO RECONNECT: publish ulang berhasil"
+                            )
+
+                            startControlAfterMediaConnected(
+                                sessionId
+                            )
+                        } else {
+                            Log.e(
+                                TAG,
+                                "VIDEO RECONNECT: publish ulang gagal: $error"
+                            )
+
+                            scheduleVideoReconnect(
+                                PeerConnection.PeerConnectionState.FAILED
+                            )
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                videoReconnectInProgress = false
+
+                Log.e(
+                    TAG,
+                    "VIDEO RECONNECT: exception saat rebuild",
+                    e
+                )
+
+                scheduleVideoReconnect(
+                    PeerConnection.PeerConnectionState.FAILED
+                )
+            }
         }
     }
 
@@ -1245,6 +1465,7 @@ class RealtimeManager(
         }
 
         currentSessionId = sessionId
+        currentDeviceId = deviceId
 
         controlSetupStarted = false
         controlTransportReady = false
@@ -2950,6 +3171,14 @@ class RealtimeManager(
 
     fun stopScreenCapture() {
 
+        videoReconnectHandler.removeCallbacksAndMessages(
+            null
+        )
+
+        videoReconnectInProgress = false
+        videoReconnectAttempts = 0
+        videoReconnectGeneration++
+
         stopOutboundRtpStatsLogging()
 
         Log.d(
@@ -3031,6 +3260,14 @@ class RealtimeManager(
 
     fun dispose() {
 
+        videoReconnectHandler.removeCallbacksAndMessages(
+            null
+        )
+
+        videoReconnectInProgress = false
+        videoReconnectAttempts = 0
+        videoReconnectGeneration++
+
         stopOutboundRtpStatsLogging()
 
         Log.d(
@@ -3088,6 +3325,9 @@ class RealtimeManager(
             false
 
         currentSessionId =
+            null
+
+        currentDeviceId =
             null
 
         Log.d(
