@@ -3565,13 +3565,14 @@ async function setupViewerControlChannel(deviceId) {
     viewerControlChannel = channel;
 
     channel.onopen = () => {
-        // Browser-side OPEN only proves that the local WebRTC channel is open.
-        // Android must send control_ready before commands are enabled.
-        viewerControlReady = false;
+        // The APK is a stable command bridge. The website owns the control UI
+        // and protocol; once the negotiated DataChannel is OPEN, commands can
+        // be sent immediately without an Android-side handshake.
+        viewerControlReady = true;
         if (status) {
-            status.innerHTML = '<span class="dot online"></span>Control Handshaking';
+            status.innerHTML = '<span class="dot online"></span>Control Ready';
         }
-        console.log("[Viewer] Control DataChannel OPEN, waiting for Android handshake", channelId);
+        console.log("[Viewer] Control DataChannel OPEN", channelId);
     };
 
     channel.onclose = () => {
@@ -3592,33 +3593,15 @@ async function setupViewerControlChannel(deviceId) {
     };
 
     channel.onmessage = event => {
+        // Reserved for future APK → website control events. The current
+        // command path does not require a readiness handshake.
         console.log("[Viewer] Control message:", event.data);
-
-        try {
-            const message =
-                typeof event.data === "string"
-                    ? JSON.parse(event.data)
-                    : event.data;
-
-            if (message?.type === "control_ready") {
-                viewerControlReady = true;
-
-                if (status) {
-                    status.innerHTML = '<span class="dot online"></span>Control Ready';
-                }
-
-                console.log(
-                    "[Viewer] Android CONTROL READY handshake diterima"
-                );
-            }
-        } catch (error) {
-            console.warn("[Viewer] Control message bukan JSON:", error);
-        }
     };
 
     if (channel.readyState === "open") {
+        viewerControlReady = true;
         if (status) {
-            status.innerHTML = '<span class="dot online"></span>Control Handshaking';
+            status.innerHTML = '<span class="dot online"></span>Control Ready';
         }
     }
 }
