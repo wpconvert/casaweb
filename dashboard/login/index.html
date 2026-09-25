@@ -1,0 +1,745 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<title>Login - RemotePhone</title>
+
+<style>
+    :root{
+        --bg:#0b0f14;
+        --panel:#11161d;
+        --panel2:#151b23;
+        --border:#242d38;
+        --text:#f3f6f8;
+        --muted:#8793a1;
+        --green:#4ade80;
+        --red:#f87171;
+    }
+
+    *{
+        box-sizing:border-box;
+        margin:0;
+        padding:0;
+    }
+
+    body{
+        min-height:100vh;
+        background:
+            radial-gradient(
+                circle at 50% 35%,
+                #17221d 0%,
+                var(--bg) 42%,
+                #070a0e 100%
+            );
+        color:var(--text);
+        font-family:Inter,Arial,Helvetica,sans-serif;
+
+        display:flex;
+        align-items:center;
+        justify-content:center;
+
+        padding:20px;
+    }
+
+    .login-wrap{
+        width:100%;
+        max-width:390px;
+    }
+
+    .brand{
+        text-align:center;
+        margin-bottom:28px;
+    }
+
+    .brand-title{
+        font-size:28px;
+        font-weight:800;
+        letter-spacing:-.5px;
+    }
+
+    .brand-title span{
+        color:var(--green);
+    }
+
+    .brand-subtitle{
+        margin-top:7px;
+        color:var(--muted);
+        font-size:12px;
+    }
+
+    .login-card{
+        background:rgba(17,22,29,.96);
+        border:1px solid var(--border);
+        border-radius:16px;
+        padding:28px;
+
+        box-shadow:
+            0 25px 70px rgba(0,0,0,.45);
+    }
+
+    .login-title{
+        font-size:19px;
+        font-weight:700;
+        margin-bottom:6px;
+    }
+
+    .login-desc{
+        color:var(--muted);
+        font-size:12px;
+        line-height:1.6;
+        margin-bottom:24px;
+    }
+
+    .field{
+        margin-bottom:16px;
+    }
+
+    .field label{
+        display:block;
+        font-size:11px;
+        color:#aeb8c4;
+        margin-bottom:7px;
+    }
+
+    .input-wrap{
+        position:relative;
+    }
+
+    input{
+        width:100%;
+        height:44px;
+
+        background:#0c1117;
+        color:var(--text);
+
+        border:1px solid var(--border);
+        border-radius:9px;
+
+        padding:0 13px;
+
+        outline:none;
+        font-size:13px;
+
+        transition:
+            border-color .15s,
+            box-shadow .15s;
+    }
+
+    input:focus{
+        border-color:#3d9b60;
+
+        box-shadow:
+            0 0 0 3px rgba(74,222,128,.08);
+    }
+
+    input::placeholder{
+        color:#586473;
+    }
+
+    .password-input{
+        padding-right:70px;
+    }
+
+    .show-password{
+        position:absolute;
+        right:8px;
+        top:50%;
+        transform:translateY(-50%);
+
+        height:30px;
+
+        border:0;
+        background:transparent;
+
+        color:#7f8b99;
+        font-size:11px;
+
+        padding:0 7px;
+        border-radius:6px;
+    }
+
+    .show-password:hover{
+        color:#fff;
+        background:#1a222c;
+    }
+
+    .login-btn{
+        width:100%;
+        height:44px;
+
+        border:0;
+        border-radius:9px;
+
+        background:var(--green);
+        color:#07100a;
+
+        font-size:13px;
+        font-weight:700;
+
+        cursor:pointer;
+
+        margin-top:5px;
+
+        transition:
+            opacity .15s,
+            transform .1s;
+    }
+
+    .login-btn:hover{
+        opacity:.9;
+    }
+
+    .login-btn:active{
+        transform:scale(.99);
+    }
+
+    .login-btn:disabled{
+        opacity:.55;
+        cursor:not-allowed;
+    }
+
+    .login-status{
+        min-height:18px;
+
+        margin-top:13px;
+
+        text-align:center;
+
+        color:var(--muted);
+        font-size:11px;
+    }
+
+    .footer{
+        text-align:center;
+
+        color:#56616e;
+
+        font-size:10px;
+
+        margin-top:20px;
+    }
+
+    /* =========================================================
+       CUSTOM ERROR MODAL
+       ========================================================= */
+
+    .modal-overlay{
+        position:fixed;
+        inset:0;
+
+        background:rgba(0,0,0,.68);
+
+        display:none;
+        align-items:center;
+        justify-content:center;
+
+        padding:20px;
+
+        z-index:100;
+    }
+
+    .modal-overlay.show{
+        display:flex;
+    }
+
+    .modal{
+        width:100%;
+        max-width:340px;
+
+        background:#11161d;
+
+        border:1px solid #35252a;
+
+        border-radius:14px;
+
+        padding:23px;
+
+        box-shadow:
+            0 25px 80px rgba(0,0,0,.55);
+
+        animation:modalIn .15s ease-out;
+    }
+
+    @keyframes modalIn{
+        from{
+            opacity:0;
+            transform:translateY(8px) scale(.98);
+        }
+
+        to{
+            opacity:1;
+            transform:translateY(0) scale(1);
+        }
+    }
+
+    .modal-icon{
+        width:38px;
+        height:38px;
+
+        display:flex;
+        align-items:center;
+        justify-content:center;
+
+        border-radius:10px;
+
+        background:#241719;
+        color:var(--red);
+
+        font-size:19px;
+
+        margin-bottom:14px;
+    }
+
+    .modal-title{
+        font-size:15px;
+        font-weight:700;
+
+        margin-bottom:6px;
+    }
+
+    .modal-text{
+        color:var(--muted);
+        font-size:11px;
+        line-height:1.6;
+
+        margin-bottom:18px;
+    }
+
+    .modal-btn{
+        width:100%;
+        height:38px;
+
+        border:1px solid var(--border);
+        border-radius:8px;
+
+        background:#171d25;
+        color:#fff;
+
+        font-size:11px;
+        font-weight:600;
+
+        cursor:pointer;
+    }
+
+    .modal-btn:hover{
+        background:#1d2530;
+    }
+
+    @media(max-width:450px){
+        .login-card{
+            padding:22px;
+        }
+    }
+</style>
+</head>
+
+<body>
+
+<div class="login-wrap">
+
+    <div class="brand">
+        <div class="brand-title">
+            Remote<span>Phone</span>
+        </div>
+
+        <div class="brand-subtitle">
+            Remote Android Management
+        </div>
+    </div>
+
+
+    <div class="login-card">
+
+        <div class="login-title">
+            Sign in
+        </div>
+
+        <div class="login-desc">
+            Masuk untuk mengakses RemotePhone Dashboard.
+        </div>
+
+
+        <form id="loginForm">
+
+            <div class="field">
+                <label for="username">
+                    Username
+                </label>
+
+                <input
+                    id="username"
+                    name="username"
+                    type="text"
+                    autocomplete="username"
+                    placeholder="Masukkan username"
+                    required
+                    autofocus
+                >
+            </div>
+
+
+            <div class="field">
+                <label for="password">
+                    Password
+                </label>
+
+                <div class="input-wrap">
+
+                    <input
+                        id="password"
+                        name="password"
+                        class="password-input"
+                        type="password"
+                        autocomplete="current-password"
+                        placeholder="Masukkan password"
+                        required
+                    >
+
+                    <button
+                        type="button"
+                        class="show-password"
+                        id="showPassword"
+                    >
+                        Show
+                    </button>
+
+                </div>
+            </div>
+
+
+            <button
+                type="submit"
+                class="login-btn"
+                id="loginButton"
+            >
+                Login
+            </button>
+
+        </form>
+
+
+        <div
+            class="login-status"
+            id="loginStatus"
+        ></div>
+
+    </div>
+
+
+    <div class="footer">
+        RemotePhone Dashboard
+    </div>
+
+</div>
+
+
+<!-- =========================================================
+     ERROR MODAL
+     ========================================================= -->
+
+<div
+    class="modal-overlay"
+    id="errorModal"
+>
+    <div class="modal">
+
+        <div class="modal-icon">
+            !
+        </div>
+
+        <div class="modal-title">
+            Login gagal
+        </div>
+
+        <div
+            class="modal-text"
+            id="errorModalText"
+        >
+            Username atau password salah.
+        </div>
+
+        <button
+            class="modal-btn"
+            id="closeModal"
+            type="button"
+        >
+            Tutup
+        </button>
+
+    </div>
+</div>
+
+
+<script>
+
+const API_URL =
+    "https://web-phone-oneforall.danip4848.workers.dev";
+
+const DASHBOARD_URL =
+    "https://wpconvert.github.io/casaweb/dashboard/home/index.html";
+
+const SESSION_KEY =
+    "remotephone_logged_in";
+
+const USER_KEY =
+    "remotephone_username";
+
+
+/* =========================================================
+   ELEMENTS
+   ========================================================= */
+
+const loginForm =
+    document.getElementById("loginForm");
+
+const usernameInput =
+    document.getElementById("username");
+
+const passwordInput =
+    document.getElementById("password");
+
+const loginButton =
+    document.getElementById("loginButton");
+
+const loginStatus =
+    document.getElementById("loginStatus");
+
+const showPassword =
+    document.getElementById("showPassword");
+
+const errorModal =
+    document.getElementById("errorModal");
+
+const errorModalText =
+    document.getElementById("errorModalText");
+
+const closeModal =
+    document.getElementById("closeModal");
+
+
+/* =========================================================
+   IF ALREADY LOGGED IN
+   ========================================================= */
+
+if (
+    localStorage.getItem(SESSION_KEY) === "true"
+) {
+    window.location.replace(
+        DASHBOARD_URL
+    );
+}
+
+
+/* =========================================================
+   SHOW / HIDE PASSWORD
+   ========================================================= */
+
+showPassword.addEventListener(
+    "click",
+    () => {
+
+        const isPassword =
+            passwordInput.type === "password";
+
+        passwordInput.type =
+            isPassword
+                ? "text"
+                : "password";
+
+        showPassword.textContent =
+            isPassword
+                ? "Hide"
+                : "Show";
+    }
+);
+
+
+/* =========================================================
+   ERROR MODAL
+   ========================================================= */
+
+function showError(message) {
+
+    errorModalText.textContent =
+        message ||
+        "Username atau password salah.";
+
+    errorModal.classList.add(
+        "show"
+    );
+}
+
+function hideError() {
+
+    errorModal.classList.remove(
+        "show"
+    );
+
+    passwordInput.focus();
+}
+
+closeModal.addEventListener(
+    "click",
+    hideError
+);
+
+errorModal.addEventListener(
+    "click",
+    (event) => {
+
+        if (
+            event.target ===
+            errorModal
+        ) {
+            hideError();
+        }
+
+    }
+);
+
+
+/* =========================================================
+   LOGIN
+   ========================================================= */
+
+loginForm.addEventListener(
+    "submit",
+    async (event) => {
+
+        event.preventDefault();
+
+        const username =
+            usernameInput.value.trim();
+
+        const password =
+            passwordInput.value;
+
+        if (!username || !password) {
+            showError(
+                "Username dan password wajib diisi."
+            );
+
+            return;
+        }
+
+
+        loginButton.disabled =
+            true;
+
+        loginButton.textContent =
+            "Memeriksa...";
+
+        loginStatus.textContent =
+            "Menghubungkan ke server...";
+
+
+        try {
+
+            const response =
+                await fetch(
+                    `${API_URL}/api/login`,
+                    {
+                        method: "POST",
+
+                        headers: {
+                            "Content-Type":
+                                "application/json"
+                        },
+
+                        body:
+                            JSON.stringify({
+                                username,
+                                password
+                            })
+                    }
+                );
+
+
+            let result = null;
+
+            try {
+                result =
+                    await response.json();
+            } catch (_) {
+                result = null;
+            }
+
+
+            if (
+                !response.ok ||
+                !result ||
+                result.ok !== true
+            ) {
+
+                throw new Error(
+                    result?.error ||
+                    "Username atau password salah."
+                );
+            }
+
+
+            /* =================================================
+               LOGIN BERHASIL
+               ================================================= */
+
+            localStorage.setItem(
+                SESSION_KEY,
+                "true"
+            );
+
+            localStorage.setItem(
+                USER_KEY,
+                result.username ||
+                username
+            );
+
+
+            loginStatus.textContent =
+                "Login berhasil. Membuka dashboard...";
+
+
+            setTimeout(
+                () => {
+
+                    window.location.replace(
+                        DASHBOARD_URL
+                    );
+
+                },
+                200
+            );
+
+
+        } catch (error) {
+
+            console.error(
+                "Login error:",
+                error
+            );
+
+            loginStatus.textContent =
+                "";
+
+            showError(
+                error.message ||
+                "Login gagal. Silakan coba lagi."
+            );
+
+        } finally {
+
+            loginButton.disabled =
+                false;
+
+            loginButton.textContent =
+                "Login";
+        }
+
+    }
+);
+
+</script>
+
+</body>
+</html>
