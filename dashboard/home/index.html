@@ -4195,10 +4195,20 @@ async function startViewerStream(deviceId) {
                 video.srcObject =
                     stream;
 
-                // Keep the real WebRTC video visible; helper overlay is layered above it only when needed.
+                // Keep the real WebRTC video visible.
+                // Also force a real playback/layout refresh so the first decoded
+                // frame is not left black while the connection is already Live.
+                video.style.display = "block";
                 video.style.visibility = "visible";
                 video.style.opacity = "1";
                 video.controls = false;
+                video.autoplay = true;
+                video.playsInline = true;
+                video.muted = true;
+
+                try {
+                    video.load();
+                } catch (_) {}
                 video.classList.add(
                     "active"
                 );
@@ -4250,6 +4260,49 @@ async function startViewerStream(deviceId) {
                     );
             };
 
+
+        // =================================================
+        // 4B. FIRST-FRAME RECOVERY
+        // =================================================
+        // Some browser/encoder combinations can report a connected WebRTC
+        // session before the first decodable frame is rendered. Ask the
+        // receiver for a keyframe when the browser exposes that API.
+        let firstFrameRecoveryTimer = null;
+        const clearFirstFrameRecovery = () => {
+            if (firstFrameRecoveryTimer) {
+                clearTimeout(firstFrameRecoveryTimer);
+                firstFrameRecoveryTimer = null;
+            }
+        };
+
+        const armFirstFrameRecovery = () => {
+            clearFirstFrameRecovery();
+            firstFrameRecoveryTimer = setTimeout(() => {
+                try {
+                    const receivers = pc.getReceivers ? pc.getReceivers() : [];
+                    for (const receiver of receivers) {
+                        if (receiver.track?.kind !== "video") continue;
+                        if (typeof receiver.requestKeyFrame === "function") {
+                            receiver.requestKeyFrame();
+                        }
+                    }
+                } catch (error) {
+                    console.warn("[Viewer] first-frame recovery:", error);
+                }
+
+                try {
+                    video.play().catch(() => {});
+                } catch (_) {}
+            }, 900);
+        };
+
+        armFirstFrameRecovery();
+
+        // Cancel the recovery timer as soon as the browser actually starts
+        // presenting decoded video.
+        const markFirstFrameReady = () => clearFirstFrameRecovery();
+        video.addEventListener("playing", markFirstFrameReady, { once: true });
+        video.addEventListener("timeupdate", markFirstFrameReady, { once: true });
 
         // =================================================
         // 5. VIDEO ELEMENT LOGGING
