@@ -535,6 +535,7 @@ tr:last-child td{border-bottom:0}
             <button class="btn" onclick="sendViewerCommand('back')">◀ Back</button>
             <button class="btn" onclick="sendViewerCommand('home')">● Home</button>
             <button class="btn" onclick="sendViewerCommand('recents')">▣ Recent</button>
+            <button class="btn" onclick="refreshViewerStream()">↻ Refresh</button>
             <button class="btn" onclick="takeViewerScreenshot()">▧ Screenshot</button>
             <button class="btn" onclick="toggleViewerFullscreen()">⛶ Fullscreen</button>
         </div>
@@ -3588,6 +3589,8 @@ async function startViewerStream(deviceId) {
                 video.srcObject =
                     stream;
 
+                watchViewerFirstFrame(video);
+
                 video.controls = false;
                 video.classList.add(
                     "active"
@@ -4484,6 +4487,78 @@ function sendViewerInput(payload) {
     } catch (error) {
         console.error("[Viewer] input send:", error);
         showToast("Gagal mengirim input.");
+    }
+}
+
+async function refreshViewerStream() {
+    const deviceId = selectedDevice?.id;
+    if (!deviceId) {
+        showToast("Phone belum dipilih.");
+        return;
+    }
+
+    const button = Array.from(document.querySelectorAll(".controls .btn"))
+        .find(el => el.textContent.includes("Refresh"));
+
+    if (button) {
+        button.disabled = true;
+        button.classList.add("spinning");
+    }
+
+    try {
+        stopViewerStream({ keepAutoReconnect: true });
+
+        const video = document.getElementById("phoneVideo");
+        const message = document.getElementById("viewerMessage");
+        if (video) {
+            video.classList.remove("active");
+            video.srcObject = null;
+        }
+        if (message) {
+            message.style.display = "block";
+            message.innerHTML = "Memuat ulang live screen...";
+        }
+
+        await new Promise(resolve => setTimeout(resolve, 120));
+        await startViewerStream(deviceId);
+        showToast("Live screen sedang di-refresh.");
+    } catch (error) {
+        console.error("[Viewer] refresh stream:", error);
+        showToast("Gagal refresh live screen.");
+    } finally {
+        if (button) {
+            button.disabled = false;
+            button.classList.remove("spinning");
+        }
+    }
+}
+
+function watchViewerFirstFrame(video) {
+    if (!video) return;
+
+    // A remote WebRTC track can exist before the first decoded frame is
+    // actually presented. Track the first real frame so the UI does not
+    // pretend that a black video is already live.
+    const markFirstFrame = () => {
+        video.dataset.hasDecodedFrame = "1";
+        video.classList.add("active");
+        const message = document.getElementById("viewerMessage");
+        if (message) message.style.display = "none";
+    };
+
+    video.dataset.hasDecodedFrame = "0";
+
+    if ("requestVideoFrameCallback" in HTMLVideoElement.prototype) {
+        const checkFrame = () => {
+            if (video.videoWidth > 0 && video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
+                markFirstFrame();
+                return;
+            }
+            video.requestVideoFrameCallback(checkFrame);
+        };
+        video.requestVideoFrameCallback(checkFrame);
+    } else {
+        video.addEventListener("playing", markFirstFrame, { once: true });
     }
 }
 
