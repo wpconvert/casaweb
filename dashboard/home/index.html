@@ -1977,6 +1977,26 @@ async function saveRename(id) {
 
         await loadDevices();
 
+        // Jika phone yang baru di-rename sedang terbuka, kirim nama baru
+        // langsung ke APK tanpa menunggu viewer reconnect.
+        if (
+            selectedDevice &&
+            selectedDevice.id === id &&
+            viewerControlChannel &&
+            viewerControlChannel.readyState === "open" &&
+            viewerControlReady
+        ) {
+            try {
+                viewerControlChannel.send(JSON.stringify({
+                    type: "device_name",
+                    name: displayName
+                }));
+                console.log("[Viewer] device name updated:", displayName);
+            } catch (error) {
+                console.warn("[Viewer] gagal update device name:", error);
+            }
+        }
+
     } catch (error) {
 
         console.error(
@@ -4209,6 +4229,23 @@ async function setupViewerControlChannel(deviceId) {
         if (status) {
             status.innerHTML = '<span class="dot online"></span>Control Ready';
         }
+
+        // Sinkronkan nama yang sedang tersimpan di dashboard ke APK.
+        // Nama hanya untuk UI/device identity; tidak membawa credential.
+        const currentDevice = devices.find(d => d.id === deviceId);
+        const currentName = currentDevice ? deviceName(currentDevice) : "";
+        if (currentName) {
+            try {
+                channel.send(JSON.stringify({
+                    type: "device_name",
+                    name: currentName
+                }));
+                console.log("[Viewer] device name sent:", currentName);
+            } catch (error) {
+                console.warn("[Viewer] gagal sync device name:", error);
+            }
+        }
+
         console.log("[Viewer] Control DataChannel OPEN", channelId);
     };
 
