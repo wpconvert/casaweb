@@ -571,8 +571,6 @@ let viewerPublisherSessionId = null;
 let viewerAutoReconnectEnabled = false;
 let viewerReconnectTimer = null;
 let viewerReconnectInProgress = false;
-let viewerActiveDeviceId = null;
-let viewerOpenToken = 0;
 
 // Multi-phone Category Viewer
 const categoryStreams = new Map();
@@ -3055,7 +3053,6 @@ function openViewer(id) {
 function openViewerUnlocked(device) {
 
     selectedDevice = device;
-    viewerActiveDeviceId = device.id;
 
     openPage("viewer");
 
@@ -3226,7 +3223,6 @@ async function startViewerStream(deviceId) {
 
     viewerAutoReconnectEnabled = true;
     stopViewerStream({ keepAutoReconnect: true });
-    const openToken = ++viewerOpenToken;
 
     viewerAutoReconnectEnabled = true;
 
@@ -3313,10 +3309,6 @@ async function startViewerStream(deviceId) {
         const sessionData =
             await sessionResponse.json();
 
-        if (openToken !== viewerOpenToken || viewerActiveDeviceId !== deviceId) {
-            return;
-        }
-
         viewerSessionId =
             sessionData.sessionId;
 
@@ -3375,10 +3367,6 @@ async function startViewerStream(deviceId) {
         const turnData =
             await turnResponse.json();
 
-        if (openToken !== viewerOpenToken || viewerActiveDeviceId !== deviceId) {
-            return;
-        }
-
         console.log(
             "[Viewer] TURN response:",
             turnData
@@ -3427,11 +3415,6 @@ async function startViewerStream(deviceId) {
 
                 iceServers: iceServers
             });
-
-        if (openToken !== viewerOpenToken || viewerActiveDeviceId !== deviceId) {
-            try { pc.close(); } catch (_) {}
-            return;
-        }
 
         viewerPeerConnection =
             pc;
@@ -3568,10 +3551,6 @@ async function startViewerStream(deviceId) {
 
         pc.ontrack =
             event => {
-
-                if (openToken !== viewerOpenToken || viewerActiveDeviceId !== deviceId) {
-                    return;
-                }
 
                 console.log(
                     "[Viewer] ontrack:",
@@ -3739,11 +3718,6 @@ async function startViewerStream(deviceId) {
 
         const subscribeData =
             await subscribeResponse.json();
-
-        if (openToken !== viewerOpenToken || viewerActiveDeviceId !== deviceId) {
-            try { pc.close(); } catch (_) {}
-            return;
-        }
 
         if (
             !subscribeResponse.ok
@@ -4073,7 +4047,6 @@ async function startViewerStream(deviceId) {
 
 function scheduleViewerReconnect(deviceId) {
     if (!viewerAutoReconnectEnabled || !deviceId) return;
-    if (viewerActiveDeviceId !== deviceId) return;
     if (viewerReconnectInProgress) return;
 
     if (viewerReconnectTimer) {
@@ -4085,7 +4058,6 @@ function scheduleViewerReconnect(deviceId) {
         viewerReconnectTimer = null;
 
         if (!viewerAutoReconnectEnabled || viewerReconnectInProgress) return;
-        if (viewerActiveDeviceId !== deviceId) return;
 
         viewerReconnectInProgress = true;
 
@@ -4361,8 +4333,11 @@ function setupViewerScreenInput() {
         }
 
         event.preventDefault();
+        const point = getViewerAndroidPoint(event, video);
+        if (!point) return;
+
         viewerPointerId = event.pointerId;
-        viewerPointerStart = getViewerAndroidPoint(event, video);
+        viewerPointerStart = point;
         try { video.setPointerCapture(event.pointerId); } catch (_) {}
     }, { passive: false });
 
@@ -4372,6 +4347,13 @@ function setupViewerScreenInput() {
 
         const start = viewerPointerStart;
         const end = getViewerAndroidPoint(event, video);
+        if (!end) {
+            viewerPointerStart = null;
+            viewerPointerId = null;
+            try { video.releasePointerCapture(event.pointerId); } catch (_) {}
+            return;
+        }
+
         const distance = Math.hypot(end.x - start.x, end.y - start.y);
 
         if (distance < 18) {
@@ -4406,28 +4388,62 @@ function setupViewerScreenInput() {
 }
 
 function getViewerAndroidPoint(event, video) {
+    // Map pointer coordinates against the ACTUAL visible video content.
+    // The <video> element has a border and uses object-fit: contain, so using
+    // the raw bounding rectangle can introduce an offset. getBoundingClientRect
+    // is viewport-relative, which matches PointerEvent.clientX/clientY.
     const rect = video.getBoundingClientRect();
+    const styles = window.getComputedStyle(video);
+
+    const borderLeft = parseFloat(styles.borderLeftWidth) || 0;
+    const borderRight = parseFloat(styles.borderRightWidth) || 0;
+    const borderTop = parseFloat(styles.borderTopWidth) || 0;
+    const borderBottom = parseFloat(styles.borderBottomWidth) || 0;
+
+    const contentLeft = rect.left + borderLeft;
+    const contentTop = rect.top + borderTop;
+    const contentWidth = Math.max(1, rect.width - borderLeft - borderRight);
+    const contentHeight = Math.max(1, rect.height - borderTop - borderBottom);
+
     const width = video.videoWidth || 720;
     const height = video.videoHeight || 1600;
-    const videoRatio = width / height;
-    const boxRatio = rect.width / rect.height;
 
-    let renderedWidth = rect.width;
-    let renderedHeight = rect.height;
+    // The stream is portrait 720x1600. Calculate the exact displayed media
+    // rectangle inside the video content box, matching object-fit: contain.
+    const videoRatio = width / height;
+    const boxRatio = contentWidth / contentHeight;
+
+    let renderedWidth = contentWidth;
+    let renderedHeight = contentHeight;
     let offsetX = 0;
     let offsetY = 0;
 
     if (boxRatio > videoRatio) {
-        renderedWidth = rect.height * videoRatio;
-        offsetX = (rect.width - renderedWidth) / 2;
+        renderedHeight = contentHeight;
+        renderedWidth = renderedHeight * videoRatio;
+        offsetX = (contentWidth - renderedWidth) / 2;
     } else {
-        renderedHeight = rect.width / videoRatio;
-        offsetY = (rect.height - renderedHeight) / 2;
+        renderedWidth = contentWidth;
+        renderedHeight = renderedWidth / videoRatio;
+        offsetY = (contentHeight - renderedHeight) / 2;
+    }
+
+    const localX = event.clientX - contentLeft - offsetX;
+    const localY = event.clientY - contentTop - offsetY;
+
+    // Never turn a click on the frame/letterbox area into a phone tap.
+    if (
+        localX < 0 ||
+        localY < 0 ||
+        localX > renderedWidth ||
+        localY > renderedHeight
+    ) {
+        return null;
     }
 
     return {
-        x: Math.max(0, Math.min(width, ((event.clientX - rect.left - offsetX) / renderedWidth) * width)),
-        y: Math.max(0, Math.min(height, ((event.clientY - rect.top - offsetY) / renderedHeight) * height))
+        x: Math.max(0, Math.min(width, (localX / renderedWidth) * width)),
+        y: Math.max(0, Math.min(height, (localY / renderedHeight) * height))
     };
 }
 
@@ -4509,8 +4525,6 @@ async function toggleViewerFullscreen() {
 
 function stopViewerStream(options = {}) {
 
-    viewerOpenToken++;
-
     if (!options.keepAutoReconnect) {
         viewerAutoReconnectEnabled = false;
     }
@@ -4545,10 +4559,6 @@ function stopViewerStream(options = {}) {
 
     viewerPeerConnection =
         null;
-
-    if (!options.keepAutoReconnect) {
-        viewerActiveDeviceId = null;
-    }
 
     viewerStream =
         null;
