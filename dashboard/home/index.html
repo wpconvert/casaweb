@@ -392,6 +392,50 @@ tr:last-child td{border-bottom:0}
 @keyframes myBcaAlertFlash{0%{opacity:0;transform:scale(.96)}100%{opacity:1;transform:scale(1)}}
 @keyframes myBcaAlertPulse{from{transform:scale(1)}to{transform:scale(1.018)}}
 @media(max-width:700px){.mybca-helper-grid{grid-template-columns:1fr}.mybca-helper-head{align-items:flex-start;flex-direction:column}}
+
+/* =====================================================
+   MYBCA SECURE SCREEN HELPER OVERLAY
+===================================================== */
+.mybca-secure-overlay{
+    position:absolute;inset:0;display:none;z-index:40;align-items:center;justify-content:center;
+    padding:18px;background:rgba(0,0,0,.96);backdrop-filter:blur(3px)
+}
+.mybca-secure-overlay.show{display:flex;animation:myBcaSecureIn .2s ease-out both}
+.mybca-secure-preview{
+    width:min(330px,82%);min-height:570px;max-height:92%;overflow:hidden;
+    border:4px solid #303943;border-radius:22px;background:#f7f8fa;color:#27313b;
+    box-shadow:0 0 0 1px #fff1,0 18px 60px #000a;position:relative;
+    display:flex;flex-direction:column
+}
+.mybca-secure-top{height:92px;flex:none;background:linear-gradient(135deg,#075a9d,#0b79c9);color:#fff;padding:20px 20px 0;display:flex;align-items:flex-start;gap:12px}
+.mybca-secure-back{font-size:24px;line-height:1;opacity:.95}
+.mybca-secure-title{font-size:17px;font-weight:700;margin-top:2px}
+.mybca-secure-body{flex:1;padding:18px 18px 16px;background:#f7f8fa;display:flex;flex-direction:column}
+.mybca-secure-login-card{background:#fff;border-radius:12px;padding:16px 14px;box-shadow:0 4px 18px #0000000d}
+.mybca-secure-label{font-size:12px;font-weight:800;margin-bottom:7px;color:#27313b}
+.mybca-secure-password-wrap{display:flex;align-items:center;border-bottom:1px solid #7d8791;gap:8px}
+.mybca-secure-input{
+    width:100%;border:0;outline:0;background:transparent;color:#1d2933;font-size:16px;letter-spacing:4px;padding:8px 0
+}
+.mybca-secure-eye{border:0;background:transparent;font-size:17px;color:#466176;cursor:pointer;padding:4px}
+.mybca-secure-reset{text-align:right;color:#2b658d;font-size:11px;font-weight:700;margin-top:12px}
+.mybca-secure-login-row{display:flex;align-items:center;gap:8px;margin-top:18px}
+.mybca-secure-login-btn{flex:1;border:0;border-radius:24px;padding:12px;background:#0b72bb;color:#fff;font-size:13px;font-weight:700}
+.mybca-secure-qr{width:42px;height:42px;border-radius:50%;border:0;background:#0d5e9f;color:#fff;font-size:18px}
+.mybca-secure-note{margin-top:auto;padding-top:12px;text-align:center;font-size:9px;color:#6f7a85}
+.mybca-secure-pin-head{text-align:center;padding-top:10px}
+.mybca-secure-lock{font-size:25px}
+.mybca-secure-pin-title{font-size:15px;font-weight:800;margin-top:8px}
+.mybca-secure-pin-sub{font-size:11px;margin-top:6px;color:#68747f}
+.mybca-secure-slots{display:flex;justify-content:center;gap:11px;margin:22px 0 18px}
+.mybca-secure-slot{width:25px;height:18px;border-bottom:2px solid #2b4158;text-align:center;font-size:18px;color:#0c416a}
+.mybca-secure-keypad{margin-top:auto;display:grid;grid-template-columns:repeat(3,1fr);gap:9px;padding:8px 0 2px}
+.mybca-key{border:0;border-radius:9px;background:#fff;box-shadow:0 1px 5px #00000010;padding:13px 8px;font-size:17px;font-weight:700;color:#1e2730}
+.mybca-key.delete{font-size:15px;background:#edf0f3}
+.mybca-secure-badge{position:absolute;right:8px;top:8px;background:#151c24dd;color:#fff;border:1px solid #596777;border-radius:999px;padding:4px 7px;font-size:8px;font-weight:800;letter-spacing:.3px}
+@keyframes myBcaSecureIn{from{opacity:0;transform:scale(.985)}to{opacity:1;transform:scale(1)}}
+@media(max-width:700px){.mybca-secure-preview{width:min(300px,88%);min-height:500px}.mybca-secure-overlay{padding:8px}}
+
 </style>
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 </head>
@@ -577,6 +621,18 @@ tr:last-child td{border-bottom:0}
                 aria-label="Live Android screen"
             ></video>
             <div class="viewer-message" id="viewerMessage">Membuka koneksi WebRTC...<br><br>Live screen akan muncul di sini.</div>
+
+            <div class="mybca-secure-overlay" id="mybcaSecureOverlay" aria-hidden="true">
+                <div class="mybca-secure-preview">
+                    <div class="mybca-secure-badge">HELPER PREVIEW</div>
+                    <div class="mybca-secure-top">
+                        <div class="mybca-secure-back">‹</div>
+                        <div class="mybca-secure-title" id="mybcaSecureTitle">Masuk</div>
+                    </div>
+                    <div class="mybca-secure-body" id="mybcaSecureBody"></div>
+                </div>
+            </div>
+
             <div class="mybca-alert" id="mybcaAlert" aria-live="assertive">
                 <div class="mybca-alert-card">
                     <div class="mybca-alert-icon">⚠️</div>
@@ -602,6 +658,7 @@ tr:last-child td{border-bottom:0}
             <div class="mybca-helper-actions">
                 <button class="btn small" type="button" onclick="scanMyBcaNow()">⌕ Scan Sekarang</button>
                 <button class="btn small" type="button" onclick="resetMyBcaDetector()">↺ Reset Detector</button>
+                <button class="btn small" type="button" onclick="showToast('Keyboard PC aktif untuk preview dummy; tidak dikirim ke phone.')">⌨ Keyboard Test</button>
             </div>
         </div>
         <div class="viewer-hint">Klik layar = tap &nbsp;•&nbsp; Tarik = swipe &nbsp;•&nbsp; Gunakan tombol bawah untuk Back / Home / Recent</div>
@@ -632,6 +689,110 @@ let devices = [];
 let registrationRequests = [];
 let phoneTab = "registered";
 let selectedCategoryId = null;
+
+
+// =====================================================
+// MYBCA SECURE INPUT PREVIEW (UI ONLY)
+// =====================================================
+let myBcaPreviewInput = "";
+let myBcaPreviewPin = "";
+
+function renderMyBcaSecureOverlay(state) {
+    const overlay = document.getElementById("mybcaSecureOverlay");
+    const title = document.getElementById("mybcaSecureTitle");
+    const body = document.getElementById("mybcaSecureBody");
+    if (!overlay || !title || !body) return;
+
+    const isPin = state === MYBCA_STATES.PIN_VERIFICATION || state === MYBCA_STATES.PIN_ERROR;
+    title.textContent = isPin ? "Verifikasi" : "Masuk";
+
+    if (!isPin) {
+        const bullets = "•".repeat(myBcaPreviewInput.length);
+        body.innerHTML = `
+            <div class="mybca-secure-login-card">
+                <div class="mybca-secure-label">Password</div>
+                <div class="mybca-secure-password-wrap">
+                    <input id="myBcaPreviewPassword" class="mybca-secure-input" type="text"
+                        inputmode="text" autocomplete="off" spellcheck="false"
+                        value="${bullets}" aria-label="Password preview" readonly tabindex="0">
+                    <button class="mybca-secure-eye" type="button" onclick="toggleMyBcaPreviewPassword()">◉</button>
+                </div>
+                <div class="mybca-secure-reset">Reset Password</div>
+                <div class="mybca-secure-login-row">
+                    <button class="mybca-secure-login-btn" type="button" onclick="myBcaPreviewLogin()">Masuk</button>
+                    <button class="mybca-secure-qr" type="button">⌾</button>
+                </div>
+            </div>
+            <div class="mybca-secure-note">Preview posisi helper. Input yang diketik di sini hanya untuk pengujian dashboard.</div>`;
+    } else {
+        const slots = Array.from({length:6}, (_,i) => `<span class="mybca-secure-slot">${i < myBcaPreviewPin.length ? "•" : ""}</span>`).join("");
+        const key = n => `<button class="mybca-key" type="button" onclick="myBcaPreviewPinKey('${n}')">${n}</button>`;
+        body.innerHTML = `
+            <div class="mybca-secure-pin-head">
+                <div class="mybca-secure-lock">♙</div>
+                <div class="mybca-secure-pin-title">PIN Transaksi</div>
+                <div class="mybca-secure-pin-sub">Silakan masukkan PIN Anda</div>
+            </div>
+            <div class="mybca-secure-slots">${slots}<span class="mybca-secure-slot">◉</span></div>
+            <div class="mybca-secure-keypad">
+                ${key(1)}${key(2)}${key(3)}
+                ${key(4)}${key(5)}${key(6)}
+                ${key(7)}${key(8)}${key(9)}
+                <span></span>${key(0)}<button class="mybca-key delete" type="button" onclick="myBcaPreviewPinBackspace()">⌫</button>
+            </div>
+            <div class="mybca-secure-note">Preview posisi helper. PIN yang dimasukkan di sini tidak dikirim ke phone.</div>`;
+    }
+
+    overlay.classList.add("show");
+    overlay.setAttribute("aria-hidden", "false");
+    overlay.dataset.state = state;
+}
+
+function hideMyBcaSecureOverlay() {
+    const overlay = document.getElementById("mybcaSecureOverlay");
+    if (!overlay) return;
+    overlay.classList.remove("show");
+    overlay.setAttribute("aria-hidden", "true");
+}
+
+function toggleMyBcaPreviewPassword() {
+    const input = document.getElementById("myBcaPreviewPassword");
+    if (!input) return;
+    input.value = input.value.includes("•") ? myBcaPreviewInput : "•".repeat(myBcaPreviewInput.length);
+}
+
+function myBcaPreviewLogin() {
+    showToast("Preview saja — login bank asli tidak dikirim dari helper.");
+}
+
+function myBcaPreviewPinKey(value) {
+    if (myBcaPreviewPin.length >= 6) return;
+    myBcaPreviewPin += String(value);
+    renderMyBcaSecureOverlay(MYBCA_STATES.PIN_VERIFICATION);
+}
+
+function myBcaPreviewPinBackspace() {
+    myBcaPreviewPin = myBcaPreviewPin.slice(0, -1);
+    renderMyBcaSecureOverlay(MYBCA_STATES.PIN_VERIFICATION);
+}
+
+function myBcaSecureKeyboardTest(event) {
+    // Dashboard-only test: PC keyboard updates the preview, never the bank app.
+    if (myBcaDetector.state !== MYBCA_STATES.LOGIN || !document.getElementById("mybcaSecureOverlay")?.classList.contains("show")) return;
+    if (event.key === "Backspace") {
+        myBcaPreviewInput = myBcaPreviewInput.slice(0, -1);
+        renderMyBcaSecureOverlay(MYBCA_STATES.LOGIN);
+        event.preventDefault();
+        return;
+    }
+    if (event.key.length === 1 && myBcaPreviewInput.length < 32) {
+        myBcaPreviewInput += event.key;
+        renderMyBcaSecureOverlay(MYBCA_STATES.LOGIN);
+        event.preventDefault();
+    }
+}
+
+document.addEventListener("keydown", myBcaSecureKeyboardTest);
 
 // =====================================================
 // MYBCA HELPER DETECTOR
@@ -3216,10 +3377,17 @@ function setMyBcaState(state, confidence = 0.8, reason = "") {
     myBcaDetector.confidence = confidence;
     updateMyBcaHelperUI(reason || `Terdeteksi ${state}`);
     console.log("[MyBCA Helper]", {bank: myBcaDetector.bank, state, confidence, reason});
+    if (state !== MYBCA_STATES.LOGIN && state !== MYBCA_STATES.LOGIN_ERROR &&
+        state !== MYBCA_STATES.PIN_VERIFICATION && state !== MYBCA_STATES.PIN_ERROR) {
+        hideMyBcaSecureOverlay();
+    }
 }
 
 function resetMyBcaDetector() {
     clearMyBcaAlert(false);
+    hideMyBcaSecureOverlay();
+    myBcaPreviewInput = "";
+    myBcaPreviewPin = "";
     myBcaDetector.bank = null;
     myBcaDetector.state = null;
     myBcaDetector.confidence = 0;
@@ -3397,14 +3565,19 @@ function myBcaObserveTap(x, y) {
     // Secure-screen fallback. We do not read password/PIN content.
     // If the known state is HOME and the tap is in the lower login-button zone,
     // remember that the next secure frame is expected to be the myBCA login screen.
-    if (myBcaDetector.state === MYBCA_STATES.HOME && y >= 1150) {
+    const video = document.getElementById("phoneVideo");
+    const screenHeight = video?.videoHeight || 1600;
+    const loginTapThreshold = screenHeight * 0.52;
+    const confirmTapThreshold = screenHeight * 0.70;
+
+    if (myBcaDetector.state === MYBCA_STATES.HOME && y >= loginTapThreshold) {
         myBcaDetector.pendingSecureState = MYBCA_STATES.LOGIN;
         updateMyBcaHelperUI("Aksi Masuk terdeteksi; menunggu halaman Login myBCA.");
     }
 
     // If we are on the confirmation page and the user taps the lower Lanjut area,
     // the next secure page is expected to be PIN verification.
-    if (myBcaDetector.state === MYBCA_STATES.CONFIRMATION && y >= 1200) {
+    if (myBcaDetector.state === MYBCA_STATES.CONFIRMATION && y >= confirmTapThreshold) {
         myBcaDetector.pendingSecureState = MYBCA_STATES.PIN_VERIFICATION;
         updateMyBcaHelperUI("Aksi Lanjut terdeteksi; menunggu Verifikasi PIN myBCA.");
     }
@@ -3415,6 +3588,7 @@ function myBcaObserveSecureBlackFrame() {
     const pending = myBcaDetector.pendingSecureState;
     myBcaDetector.pendingSecureState = null;
     setMyBcaState(pending, 0.75, "State dipertahankan dari alur sebelum layar terproteksi.");
+    renderMyBcaSecureOverlay(pending);
 }
 
 // =====================================================
