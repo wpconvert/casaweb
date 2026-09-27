@@ -571,6 +571,8 @@ let viewerPublisherSessionId = null;
 let viewerAutoReconnectEnabled = false;
 let viewerReconnectTimer = null;
 let viewerReconnectInProgress = false;
+let viewerActiveDeviceId = null;
+let viewerOpenToken = 0;
 
 // Multi-phone Category Viewer
 const categoryStreams = new Map();
@@ -3053,6 +3055,7 @@ function openViewer(id) {
 function openViewerUnlocked(device) {
 
     selectedDevice = device;
+    viewerActiveDeviceId = device.id;
 
     openPage("viewer");
 
@@ -3223,6 +3226,7 @@ async function startViewerStream(deviceId) {
 
     viewerAutoReconnectEnabled = true;
     stopViewerStream({ keepAutoReconnect: true });
+    const openToken = ++viewerOpenToken;
 
     viewerAutoReconnectEnabled = true;
 
@@ -3309,6 +3313,10 @@ async function startViewerStream(deviceId) {
         const sessionData =
             await sessionResponse.json();
 
+        if (openToken !== viewerOpenToken || viewerActiveDeviceId !== deviceId) {
+            return;
+        }
+
         viewerSessionId =
             sessionData.sessionId;
 
@@ -3367,6 +3375,10 @@ async function startViewerStream(deviceId) {
         const turnData =
             await turnResponse.json();
 
+        if (openToken !== viewerOpenToken || viewerActiveDeviceId !== deviceId) {
+            return;
+        }
+
         console.log(
             "[Viewer] TURN response:",
             turnData
@@ -3415,6 +3427,11 @@ async function startViewerStream(deviceId) {
 
                 iceServers: iceServers
             });
+
+        if (openToken !== viewerOpenToken || viewerActiveDeviceId !== deviceId) {
+            try { pc.close(); } catch (_) {}
+            return;
+        }
 
         viewerPeerConnection =
             pc;
@@ -3551,6 +3568,10 @@ async function startViewerStream(deviceId) {
 
         pc.ontrack =
             event => {
+
+                if (openToken !== viewerOpenToken || viewerActiveDeviceId !== deviceId) {
+                    return;
+                }
 
                 console.log(
                     "[Viewer] ontrack:",
@@ -3718,6 +3739,11 @@ async function startViewerStream(deviceId) {
 
         const subscribeData =
             await subscribeResponse.json();
+
+        if (openToken !== viewerOpenToken || viewerActiveDeviceId !== deviceId) {
+            try { pc.close(); } catch (_) {}
+            return;
+        }
 
         if (
             !subscribeResponse.ok
@@ -4047,6 +4073,7 @@ async function startViewerStream(deviceId) {
 
 function scheduleViewerReconnect(deviceId) {
     if (!viewerAutoReconnectEnabled || !deviceId) return;
+    if (viewerActiveDeviceId !== deviceId) return;
     if (viewerReconnectInProgress) return;
 
     if (viewerReconnectTimer) {
@@ -4058,6 +4085,7 @@ function scheduleViewerReconnect(deviceId) {
         viewerReconnectTimer = null;
 
         if (!viewerAutoReconnectEnabled || viewerReconnectInProgress) return;
+        if (viewerActiveDeviceId !== deviceId) return;
 
         viewerReconnectInProgress = true;
 
@@ -4481,6 +4509,8 @@ async function toggleViewerFullscreen() {
 
 function stopViewerStream(options = {}) {
 
+    viewerOpenToken++;
+
     if (!options.keepAutoReconnect) {
         viewerAutoReconnectEnabled = false;
     }
@@ -4515,6 +4545,10 @@ function stopViewerStream(options = {}) {
 
     viewerPeerConnection =
         null;
+
+    if (!options.keepAutoReconnect) {
+        viewerActiveDeviceId = null;
+    }
 
     viewerStream =
         null;
