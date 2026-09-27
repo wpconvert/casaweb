@@ -512,8 +512,7 @@ tr:last-child td{border-bottom:0}
     <div class="viewer">
         <div class="viewer-head">
             <div><div class="viewer-name" id="viewerName">Android Device</div><div class="viewer-sub" id="viewerSub">Waiting for WebRTC...</div></div>
-            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end">
-                <button class="btn small" type="button" onclick="refreshViewerStream()">↻ Refresh</button>
+            <div style="display:flex;align-items:center;gap:12px">
                 <div class="status" id="viewerStatus"></div>
                 <div class="status" id="controlStatus"><span class="dot"></span>Control Connecting</div>
             </div>
@@ -3016,25 +3015,6 @@ async function startCategoryPhoneStream(deviceId, isReconnect = false) {
 // =====================================================
 // VIEWER
 // =====================================================
-
-
-async function refreshViewerStream() {
-    const deviceId = selectedDevice?.id;
-    if (!deviceId) {
-        showToast("Belum ada phone yang dibuka.");
-        return;
-    }
-
-    try {
-        stopViewerStream({ keepAutoReconnect: false });
-        await new Promise(resolve => setTimeout(resolve, 250));
-        await startViewerStream(deviceId);
-        showToast("Viewer berhasil di-refresh.");
-    } catch (error) {
-        console.error("[Viewer] refresh:", error);
-        showToast("Refresh viewer gagal.");
-    }
-}
 
 function openViewer(id) {
 
