@@ -398,7 +398,7 @@ tr:last-child td{border-bottom:0}
 ===================================================== */
 .mybca-secure-overlay{
     position:absolute;inset:0;display:none;z-index:40;align-items:center;justify-content:center;
-    padding:18px;background:rgba(0,0,0,.96);backdrop-filter:blur(3px)
+    padding:18px;background:rgba(0,0,0,.18);backdrop-filter:blur(1px)
 }
 .mybca-secure-overlay.show{display:flex;animation:myBcaSecureIn .2s ease-out both}
 .mybca-secure-preview{
@@ -3534,17 +3534,12 @@ async function scanMyBcaNow() {
 function startMyBcaDetector() {
     stopMyBcaDetector();
     myBcaDetector.running = true;
+
+    // Jangan jalankan OCR otomatis terus-menerus saat viewer baru dibuka.
+    // OCR Tesseract dapat membebani browser dan membuat rendering WebRTC tersendat.
+    // Scan tetap bisa dijalankan manual dengan tombol "Scan Sekarang".
     startMyBcaBlackFrameWatcher();
-    updateMyBcaHelperUI("Menunggu frame live...");
-
-    const tick = async () => {
-        if (!myBcaDetector.running) return;
-        await scanMyBcaNow();
-        if (!myBcaDetector.running) return;
-        myBcaDetector.timer = setTimeout(tick, 3000);
-    };
-
-    myBcaDetector.timer = setTimeout(tick, 1200);
+    updateMyBcaHelperUI("Live screen siap. Gunakan Scan Sekarang untuk membaca halaman normal.");
 }
 
 function stopMyBcaDetector() {
@@ -4200,6 +4195,9 @@ async function startViewerStream(deviceId) {
                 video.srcObject =
                     stream;
 
+                // Keep the real WebRTC video visible; helper overlay is layered above it only when needed.
+                video.style.visibility = "visible";
+                video.style.opacity = "1";
                 video.controls = false;
                 video.classList.add(
                     "active"
