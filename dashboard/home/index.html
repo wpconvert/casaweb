@@ -2758,8 +2758,12 @@ async function refreshAllCategoryPhones() {
         return;
     }
 
+    // Refresh All tidak boleh membuka Open All.
+    // Jika multi-view belum dibuka, cukup refresh data/device list.
     if (!categoryAllPhonesOpen) {
-        showCategoryMultiView();
+        await loadDevices();
+        renderAll();
+        showToast("Daftar phone berhasil di-refresh.");
         return;
     }
 
@@ -4231,20 +4235,7 @@ async function setupViewerControlChannel(deviceId) {
         }
 
         // Sinkronkan nama yang sedang tersimpan di dashboard ke APK.
-        // Nama hanya untuk UI/device identity; tidak membawa credential.
-        const currentDevice = devices.find(d => d.id === deviceId);
-        const currentName = currentDevice ? deviceName(currentDevice) : "";
-        if (currentName) {
-            try {
-                channel.send(JSON.stringify({
-                    type: "device_name",
-                    name: currentName
-                }));
-                console.log("[Viewer] device name sent:", currentName);
-            } catch (error) {
-                console.warn("[Viewer] gagal sync device name:", error);
-            }
-        }
+        syncViewerDeviceName(deviceId);
 
         console.log("[Viewer] Control DataChannel OPEN", channelId);
     };
@@ -4277,6 +4268,7 @@ async function setupViewerControlChannel(deviceId) {
         if (status) {
             status.innerHTML = '<span class="dot online"></span>Control Ready';
         }
+        syncViewerDeviceName(deviceId);
     }
 }
 
@@ -4409,6 +4401,31 @@ function getViewerAndroidPoint(event, video) {
         x: Math.max(0, Math.min(width, ((event.clientX - rect.left - offsetX) / renderedWidth) * width)),
         y: Math.max(0, Math.min(height, ((event.clientY - rect.top - offsetY) / renderedHeight) * height))
     };
+}
+
+function syncViewerDeviceName(deviceId = null) {
+    const targetId = deviceId || selectedDevice?.id;
+    if (!targetId) return false;
+
+    if (!viewerControlChannel || viewerControlChannel.readyState !== "open" || !viewerControlReady) {
+        return false;
+    }
+
+    const currentDevice = devices.find(d => d.id === targetId);
+    const currentName = currentDevice ? deviceName(currentDevice) : "";
+    if (!currentName) return false;
+
+    try {
+        viewerControlChannel.send(JSON.stringify({
+            type: "device_name",
+            name: currentName
+        }));
+        console.log("[Viewer] device name sync:", currentName);
+        return true;
+    } catch (error) {
+        console.warn("[Viewer] device name sync gagal:", error);
+        return false;
+    }
 }
 
 function sendViewerInput(payload) {
