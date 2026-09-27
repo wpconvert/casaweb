@@ -811,7 +811,8 @@ const myBcaDetector = {
     lastTapAt: 0,
     activeError: null,
     errorBaseState: null,
-    lastDetectedAt: 0
+    lastDetectedAt: 0,
+    secureOverlayTimer: null
 };
 
 // Semua state myBCA sengaja menyimpan nama bank.
@@ -3582,6 +3583,10 @@ function stopMyBcaDetector() {
         clearTimeout(myBcaDetector.autoScanTimer);
         myBcaDetector.autoScanTimer = null;
     }
+    if (myBcaDetector.secureOverlayTimer) {
+        clearTimeout(myBcaDetector.secureOverlayTimer);
+        myBcaDetector.secureOverlayTimer = null;
+    }
     myBcaDetector.scanning = false;
 }
 
@@ -3597,9 +3602,21 @@ function myBcaObserveTap(x, y) {
     const loginTapThreshold = screenHeight * 0.52;
     const confirmTapThreshold = screenHeight * 0.70;
 
-    if (myBcaDetector.state === MYBCA_STATES.HOME && y >= loginTapThreshold) {
+    if ((myBcaDetector.state === MYBCA_STATES.HOME || myBcaDetector.bank === "MYBCA" || !myBcaDetector.state) && y >= loginTapThreshold) {
+        myBcaDetector.bank = "MYBCA";
         myBcaDetector.pendingSecureState = MYBCA_STATES.LOGIN;
-        updateMyBcaHelperUI("Aksi Masuk terdeteksi; menunggu halaman Login myBCA.");
+        updateMyBcaHelperUI("Masuk myBCA terdeteksi. Menunggu layar password...");
+
+        // Jangan menunggu OCR/black-frame detector. Pada layar aman myBCA,
+        // video memang bisa menjadi gelap dan tidak bisa dibaca OCR.
+        // Helper LOGIN langsung ditampilkan setelah jeda singkat agar transisi
+        // aplikasi di phone selesai, lalu overlay mengambil alih area layar.
+        clearTimeout(myBcaDetector.secureOverlayTimer);
+        myBcaDetector.secureOverlayTimer = setTimeout(() => {
+            if (myBcaDetector.pendingSecureState === MYBCA_STATES.LOGIN) {
+                myBcaObserveSecureBlackFrame();
+            }
+        }, 350);
     }
 
     // If we are on the confirmation page and the user taps the lower Lanjut area,
