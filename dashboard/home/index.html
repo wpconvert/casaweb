@@ -4189,14 +4189,15 @@ async function startViewerStream(deviceId) {
                     "connected"
                 ) {
 
-                    message.style.display =
-                        "none";
+                    // A connected PeerConnection does not prove that video
+                    // frames are arriving. Keep the UI honest until onplaying.
+                    message.style.display = "block";
+                    message.textContent = "Koneksi tersambung; menunggu gambar video dari HP...";
 
                     if (viewerStatus) {
-
                         viewerStatus.innerHTML = `
-                            <span class="dot online"></span>
-                            Screen Live
+                            <span class="dot"></span>
+                            Menunggu video
                         `;
                     }
 
@@ -4457,6 +4458,14 @@ async function startViewerStream(deviceId) {
                     video.videoWidth,
                     video.videoHeight
                 );
+
+                message.style.display = "none";
+                if (viewerStatus) {
+                    viewerStatus.innerHTML = `
+                        <span class="dot online"></span>
+                        Screen Live
+                    `;
+                }
             };
 
         video.onerror =
