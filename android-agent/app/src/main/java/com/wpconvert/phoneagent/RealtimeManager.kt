@@ -1,96 +1,192 @@
-package com.wpconvert.phoneagent
 
-import android.content.Context
-import android.content.Intent
-import android.media.projection.MediaProjection
-import android.os.Handler
-import android.os.Looper
-import android.util.Log
-import org.json.JSONObject
-import org.webrtc.IceCandidate
-import org.webrtc.MediaConstraints
-import org.webrtc.PeerConnection
-import org.webrtc.PeerConnectionFactory
-import org.webrtc.ScreenCapturerAndroid
-import org.webrtc.SessionDescription
-import org.webrtc.SurfaceTextureHelper
-import org.webrtc.VideoSource
-import org.webrtc.VideoTrack
-import org.webrtc.DataChannel
-import org.webrtc.RTCStats
-import org.webrtc.RTCStatsReport
-import java.net.HttpURLConnection
-import java.nio.ByteBuffer
-import java.net.URL
-import kotlin.concurrent.thread
+            PeerConnectionFactory.initialize(
+                PeerConnectionFactory
+                    .InitializationOptions
+                    .builder(
+                        context.applicationContext
+                    )
+                    .setEnableInternalTracer(
+                        false
+                    )
+                    .createInitializationOptions()
+            )
 
-class RealtimeManager(
-    private val context: Context
-) {
+            val eglBase =
+                org.webrtc.EglBase.create()
 
-    companion object {
+            val encoderFactory =
+                org.webrtc.DefaultVideoEncoderFactory(
+                    eglBase.eglBaseContext,
+                    true,
+                    true
+                )
 
-        private const val TAG =
-            "RealtimeManager"
+            val decoderFactory =
+                org.webrtc.DefaultVideoDecoderFactory(
+                    eglBase.eglBaseContext
+                )
 
-        private const val WORKER_URL =
-            "https://web-phone-oneforall.danip4848.workers.dev"
+            peerConnectionFactory =
+                PeerConnectionFactory
+                    .builder()
+                    .setVideoEncoderFactory(
+                        encoderFactory
+                    )
+                    .setVideoDecoderFactory(
+                        decoderFactory
+                    )
+                    .createPeerConnectionFactory()
 
-        private const val CONTROL_CHANNEL_NAME =
-            "controls"
+            initialized =
+                peerConnectionFactory != null
+
+            if (initialized) {
+
+                Log.d(
+                    TAG,
+                    "WebRTC berhasil diinisialisasi"
+                )
+
+            } else {
+
+                Log.e(
+                    TAG,
+                    "PeerConnectionFactory = null"
+                )
+            }
+
+        } catch (e: Exception) {
+
+            Log.e(
+                TAG,
+                "Gagal inisialisasi WebRTC",
+                e
+            )
+
+            initialized = false
+        }
     }
 
     // =====================================================
-    // WEBRTC
+    // START SCREEN CAPTURE
     // =====================================================
 
-    private var peerConnectionFactory:
-        PeerConnectionFactory? = null
+    /*
+     * Fungsi ini dipanggil oleh
+     * ScreenCaptureService setelah
+     * foreground service MediaProjection
+     * sudah aktif.
+     */
 
-    private var peerConnection:
-        PeerConnection? = null
+    fun startScreenCapture(
+        resultCode: Int,
+        projectionData: Intent
+    ) {
 
-    private var videoSource:
-        VideoSource? = null
+        if (!initialized) {
 
-    private var videoTrack:
-        VideoTrack? = null
+            initialize()
+        }
 
-    private var surfaceTextureHelper:
-        SurfaceTextureHelper? = null
+        if (capturing) {
 
-    private var screenCapturer:
-        ScreenCapturerAndroid? = null
+            Log.d(
+                TAG,
+                "Screen capture sudah aktif"
+            )
 
-    // =====================================================
-    // STATE
-    // =====================================================
+            return
+        }
 
-    private var initialized =
-        false
+        val factory =
+            peerConnectionFactory
 
-    private var capturing =
-        false
+        if (factory == null) {
 
-    // Exposed read-only state used by ScreenCaptureService.
-    val isCapturing: Boolean
-        get() = capturing
+            Log.e(
+                TAG,
+                "PeerConnectionFactory belum tersedia"
+            )
 
-    private var currentSessionId:
-        String? = null
+            return
+        }
 
-    private var currentDeviceId:
-        String? = null
+        try {
 
-    // =====================================================
-    // CONTROL DATACHANNEL
-    // =====================================================
+            Log.d(
+                TAG,
+                "Menyiapkan WebRTC screen capture"
+            )
 
-    private var controlDataChannel:
-        DataChannel? = null
+            // =================================================
+            // EGL
+            // =================================================
 
-    private var controlChannelId:
-        Int? = null
+            val eglBase =
+                org.webrtc.EglBase.create()
 
-    @Volatile
-    private var controlChannelReady = false
+            // =================================================
+            // SURFACE TEXTURE HELPER
+            // =================================================
+
+            surfaceTextureHelper =
+                SurfaceTextureHelper.create(
+                    "ScreenCaptureThread",
+                    eglBase.eglBaseContext
+                )
+
+            // =================================================
+            // VIDEO SOURCE
+            // =================================================
+
+            videoSource =
+                factory.createVideoSource(
+                    false
+                )
+
+            // =================================================
+            // SCREEN CAPTURER
+            // =================================================
+
+            screenCapturer =
+                ScreenCapturerAndroid(
+                    projectionData,
+                    object : MediaProjection.Callback() {
+
+                        override fun onStop() {
+
+                            Log.d(
+                                TAG,
+                                "MediaProjection dihentikan Android"
+                            )
+
+                            capturing = false
+
+                            /*
+                             * Ini berbeda dari network/WebRTC disconnect.
+                             * Android benar-benar mencabut MediaProjection.
+                             *
+                             * Auto reconnect PeerConnection sengaja TIDAK
+                             * dijalankan di sini karena token projection lama
+                             * sudah tidak valid. ScreenCaptureService harus
+                             * menyediakan projection baru untuk kasus ini.
+                             */
+                            Log.w(
+                                TAG,
+                                "VIDEO: MediaProjection STOP -> menunggu service menyediakan projection baru"
+                            )
+                        }
+                    }
+                )
+
+            val capturer =
+                screenCapturer
+
+            val helper =
+                surfaceTextureHelper
+
+            val source =
+                videoSource
+
+            if (
+                capturer == null ||
