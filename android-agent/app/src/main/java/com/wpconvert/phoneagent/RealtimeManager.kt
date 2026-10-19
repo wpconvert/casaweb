@@ -72,10 +72,6 @@ class RealtimeManager(
     private var capturing =
         false
 
-    // Exposed read-only state used by ScreenCaptureService.
-    val isCapturing: Boolean
-        get() = capturing
-
     private var currentSessionId:
         String? = null
 
