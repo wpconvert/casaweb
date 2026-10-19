@@ -1,123 +1,95 @@
+package com.wpconvert.phoneagent
 
-        } catch (_: Exception) {
-        }
+import android.content.Context
+import android.content.Intent
+import android.media.projection.MediaProjection
+import android.os.Handler
+import android.os.Looper
+import android.util.Log
+import org.json.JSONObject
+import org.webrtc.IceCandidate
+import org.webrtc.MediaConstraints
+import org.webrtc.PeerConnection
+import org.webrtc.PeerConnectionFactory
+import org.webrtc.ScreenCapturerAndroid
+import org.webrtc.SessionDescription
+import org.webrtc.SurfaceTextureHelper
+import org.webrtc.VideoSource
+import org.webrtc.VideoTrack
+import org.webrtc.DataChannel
+import org.webrtc.RTCStats
+import org.webrtc.RTCStatsReport
+import java.net.HttpURLConnection
+import java.nio.ByteBuffer
+import java.net.URL
+import kotlin.concurrent.thread
 
-        videoTrack =
-            null
+class RealtimeManager(
+    private val context: Context
+) {
 
-        try {
+    companion object {
 
-            videoSource?.dispose()
+        private const val TAG =
+            "RealtimeManager"
 
-        } catch (_: Exception) {
-        }
+        private const val WORKER_URL =
+            "https://web-phone-oneforall.danip4848.workers.dev"
 
-        videoSource =
-            null
-
-        try {
-
-            surfaceTextureHelper?.dispose()
-
-        } catch (_: Exception) {
-        }
-
-        surfaceTextureHelper =
-            null
-
-        capturing =
-            false
-
-        Log.d(
-            TAG,
-            "Screen capture dihentikan"
-        )
+        private const val CONTROL_CHANNEL_NAME =
+            "controls"
     }
 
     // =====================================================
-    // DISPOSE
+    // WEBRTC
     // =====================================================
 
-    fun dispose() {
+    private var peerConnectionFactory:
+        PeerConnectionFactory? = null
 
-        videoReconnectHandler.removeCallbacksAndMessages(
-            null
-        )
+    private var peerConnection:
+        PeerConnection? = null
 
-        videoReconnectInProgress = false
-        videoReconnectAttempts = 0
-        videoReconnectGeneration++
+    private var videoSource:
+        VideoSource? = null
 
-        stopOutboundRtpStatsLogging()
+    private var videoTrack:
+        VideoTrack? = null
 
-        Log.d(
-            TAG,
-            "Dispose RealtimeManager"
-        )
+    private var surfaceTextureHelper:
+        SurfaceTextureHelper? = null
 
-        stopScreenCapture()
+    private var screenCapturer:
+        ScreenCapturerAndroid? = null
 
-        try {
+    // =====================================================
+    // STATE
+    // =====================================================
 
-            peerConnection?.close()
+    private var initialized =
+        false
 
-        } catch (_: Exception) {
-        }
+    private var capturing =
+        false
 
-        peerConnection =
-            null
+    private var currentSessionId:
+        String? = null
 
-        try {
+    private var currentDeviceId:
+        String? = null
 
-            peerConnectionFactory?.dispose()
+    // =====================================================
+    // CONTROL DATACHANNEL
+    // =====================================================
 
-        } catch (_: Exception) {
-        }
+    private var controlDataChannel:
+        DataChannel? = null
 
-        peerConnectionFactory =
-            null
+    private var controlChannelId:
+        Int? = null
 
-        initialized =
-            false
+    @Volatile
+    private var controlChannelReady = false
 
-        controlHandler.removeCallbacksAndMessages(
-            null
-        )
-
-        try {
-            controlDataChannel?.unregisterObserver()
-        } catch (_: Exception) {
-        }
-
-        try {
-            controlDataChannel?.dispose()
-        } catch (_: Exception) {
-        }
-
-        controlDataChannel =
-            null
-        controlChannelId =
-            null
-        controlChannelReady =
-            false
-        controlSetupStarted =
-            false
-        controlTransportReady =
-            false
-        controlTransportInProgress =
-            false
-        controlApplicationInProgress =
-            false
-
-        currentSessionId =
-            null
-
-        currentDeviceId =
-            null
-
-        Log.d(
-            TAG,
-            "RealtimeManager selesai dispose"
-        )
-    }
-}
+    @Volatile
+    private var controlSetupStarted = false
