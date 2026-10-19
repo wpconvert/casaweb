@@ -73,7 +73,8 @@ class RealtimeManager(
         false
 
     // Exposed read-only state used by ScreenCaptureService.
-    val isCapturing: Boolean
+    // Named differently from isCapturing() to avoid a JVM getter clash.
+    val isCaptureActive: Boolean
         get() = capturing
 
     private var currentSessionId:
@@ -497,32 +498,6 @@ class RealtimeManager(
             videoTrack?.setEnabled(
                 true
             )
-
-            // IMPORTANT: the service may create PeerConnection before the
-            // MediaProjection capture starts. In that order, createPeerConnection()
-            // could not add a video track because videoTrack was still null.
-            // Attach the newly-created track now if a PeerConnection already exists.
-            // If capture starts first, createPeerConnection() adds it later as usual.
-            val existingConnection = peerConnection
-            val createdTrack = videoTrack
-            if (existingConnection != null && createdTrack != null) {
-                val senderAlreadyHasTrack = existingConnection.senders.any { sender ->
-                    sender.track()?.id() == createdTrack.id()
-                }
-                if (!senderAlreadyHasTrack) {
-                    val sender = existingConnection.addTrack(
-                        createdTrack,
-                        listOf("screen-stream")
-                    )
-                    if (sender == null) {
-                        Log.e(TAG, "VIDEO TRACK: gagal menambahkan track ke PeerConnection yang sudah ada")
-                    } else {
-                        Log.d(TAG, "VIDEO TRACK: track ditambahkan setelah capture dimulai")
-                    }
-                } else {
-                    Log.d(TAG, "VIDEO TRACK: track sudah terpasang pada PeerConnection")
-                }
-            }
 
             capturing = true
 
