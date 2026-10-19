@@ -72,11 +72,6 @@ class RealtimeManager(
     private var capturing =
         false
 
-    // Exposed read-only state used by ScreenCaptureService.
-    // Named differently from isCapturing() to avoid a JVM getter clash.
-    val isCaptureActive: Boolean
-        get() = capturing
-
     private var currentSessionId:
         String? = null
 
@@ -499,6 +494,11 @@ class RealtimeManager(
                 true
             )
 
+            // PeerConnection mungkin sudah dibuat sebelum izin screen capture
+            // diberikan. Dalam kondisi itu, track belum ikut masuk ke SDP.
+            // Pasang track sekarang juga jika PeerConnection sudah tersedia.
+            ensureScreenVideoTrackAdded("screen-capture-started")
+
             capturing = true
 
             Log.d(
@@ -525,6 +525,53 @@ class RealtimeManager(
             )
 
             stopScreenCapture()
+        }
+    }
+
+    // =====================================================
+    // ENSURE SCREEN VIDEO TRACK IS ATTACHED
+    // =====================================================
+
+    private fun ensureScreenVideoTrackAdded(reason: String): Boolean {
+        val connection = peerConnection
+        val track = videoTrack
+
+        if (connection == null) {
+            Log.d(TAG, "VIDEO TRACK: PeerConnection belum tersedia ($reason)")
+            return false
+        }
+
+        if (track == null) {
+            Log.w(TAG, "VIDEO TRACK: VideoTrack belum tersedia ($reason)")
+            return false
+        }
+
+        val alreadyAdded = try {
+            connection.senders.any { sender ->
+                sender.track()?.id() == track.id()
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "VIDEO TRACK: gagal memeriksa sender", e)
+            false
+        }
+
+        if (alreadyAdded) {
+            Log.d(TAG, "VIDEO TRACK: track sudah terpasang ($reason), id=${track.id()}")
+            return true
+        }
+
+        return try {
+            val sender = connection.addTrack(track, listOf("screen-stream"))
+            if (sender != null) {
+                Log.d(TAG, "VIDEO TRACK: Screen video track berhasil ditambahkan ($reason), id=${track.id()}")
+                true
+            } else {
+                Log.e(TAG, "VIDEO TRACK: addTrack mengembalikan null ($reason)")
+                false
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "VIDEO TRACK: gagal menambahkan track ($reason)", e)
+            false
         }
     }
 
@@ -849,23 +896,10 @@ class RealtimeManager(
             )
 
             // =================================================
-            // ADD SCREEN TRACK
+            // ADD SCREEN TRACK (jika capture sudah berjalan)
             // =================================================
 
-            videoTrack?.let { track ->
-
-                peerConnection?.addTrack(
-                    track,
-                    listOf(
-                        "screen-stream"
-                    )
-                )
-
-                Log.d(
-                    TAG,
-                    "Screen video track ditambahkan"
-                )
-            }
+            ensureScreenVideoTrackAdded("peer-connection-created")
 
         } catch (e: Exception) {
 
@@ -1785,7 +1819,20 @@ class RealtimeManager(
 
         currentSessionId = sessionId
 
-        Log.d(TAG, "VIDEO PUBLISH: membuat offer media")
+        // Pastikan offer dibuat setelah track video masuk ke PeerConnection.
+        // Kalau capture belum menghasilkan VideoTrack, jangan kirim offer kosong.
+        if (videoTrack == null) {
+            callback(false, null, "VideoTrack belum tersedia. Mulai screen capture sebelum publish.")
+            Log.e(TAG, "VIDEO PUBLISH: dibatalkan karena VideoTrack belum tersedia")
+            return
+        }
+
+        if (!ensureScreenVideoTrackAdded("before-video-offer")) {
+            callback(false, null, "Gagal memasang VideoTrack ke PeerConnection")
+            return
+        }
+
+        Log.d(TAG, "VIDEO PUBLISH: membuat offer media dengan track=${videoTrack?.id()}")
 
         createOffer { offer ->
             if (offer == null) {
